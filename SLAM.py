@@ -15,6 +15,7 @@ lid = ld.get_lidar("data/train_lidar2")
 
 N, N_threshold = 100, 35
 step = 1
+sample_limit = None
 
 ### Data setup ##
 
@@ -75,7 +76,7 @@ mapfig = drawMap(particles[0, :], posX_map[0], posY_map[0], mapfig)
 pose_p, yaw_p = lid_p['pose'], rpy_p[0, 2]
 
 # Loop over all samples in dataset
-timeline = len(lid)
+timeline = min(sample_limit, len(lid)) if sample_limit else len(lid)
 for sample in range(1, timeline, step):
 	print("{0}/{1}".format(sample, timeline))
 
@@ -145,13 +146,17 @@ for sample in range(1, timeline, step):
 	pose_p, yaw_p = pose_c, yaw_c
 
 	# Resample particles if sum of squared weights is lower than threshold
-	# NOTE: why the 1 / sum??
+	# Since weights always sum to 1, this seems some sort of measure of whether the 
+	# weight distribution is broad or narrow
 	N_eff = 1 / np.sum(np.square(weight))
 	if N_eff < N_threshold:
 		print("Resampling ({0:.2f}/{1})".format(N_eff, N_threshold))
 
 		# Prepare a new list of particles
 		particle_New = np.zeros((N, 3))
+
+		# TODO: Figure out how this resamples particles?
+		# It seems to mostly re-order particles?
 		r = random.uniform(0, 1.0 / N)
 
 		c, i = weight[0], 0
@@ -162,7 +167,10 @@ for sample in range(1, timeline, step):
 				i = i + 1
 				c = c + weight[i]
 
-		particle_New[m, :] = particles[i, :]
+			# NOTE: this line was unindented, so it only ran at the end of the loop
+			# That seems like a bug to me, otherwise particles_New would mostly be empty
+			particle_New[m, :] = particles[i, :]
+
 		particles = particle_New
 		
 		# Reset the weight array to be uniform again
