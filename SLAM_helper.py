@@ -2,6 +2,23 @@ import numpy as np
 import cv2
 import random
 
+def updateWeights(weights, corr):
+	# Convert the weights to "log space". Correlation is added in log space 
+	wtmp = np.log(weights) + corr
+	
+	# Substract maximum weight from all entries
+	# This makes sure weights are all negative with the highest becoming 0
+	wtmp_max = wtmp[np.argmax(wtmp)]
+	wtmp = wtmp - wtmp_max
+	
+	# Calculates the log-sum-exponent of the weights\
+	# Subtracting that from wtmp ensures wtmp sums to 1
+	lse = np.log(np.sum(np.exp(wtmp)))
+	wtmp = wtmp - lse
+
+	# Convert the weights back from log space to "normal" space
+	return np.exp(wtmp)
+
 
 def convertFrame(part_cur, ori_robot, head_angles):
 	r, p, y = ori_robot[0], ori_robot[1], part_cur[2]
