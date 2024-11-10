@@ -23,6 +23,7 @@ N, N_threshold = 100, 35
 samples_per_iteration = 10
 
 # Number of iterations between rendering the map
+# Only used in when render_animated is True (below)
 iterations_per_frame = 10
 
 # Number of samples to limit the simulation to (can be None for full dataset)
@@ -42,11 +43,11 @@ y_range = np.array([ -0.05, 0.00, 0.05 ])
 
 # Whether to render an animated preview while calculating
 # This makes the total calculation quite a bit slower
-render_animated = True
+render_animated = False
 
 # Whether to run the QT event loop each SLAM iteration
 # This also slows down calculations, but keeps the window more responsive
-run_event_loop = True
+run_event_loop = False
 
 ### Data setup ##
 
@@ -114,6 +115,7 @@ sample = 1
 
 # Function that calls the simulation in animate preview
 def animate(frame):
+	# Perform a number of iterations before we draw the frame
 	next_frame = sample + iterations_per_frame * samples_per_iteration
 	while sample < next_frame and sample < timeline:
 		slam_iteration()
@@ -122,11 +124,8 @@ def animate(frame):
 		if run_event_loop:
 			plt.pause(0.001)
 
+	# Update the image drawer
 	im.set_data(mapfig['show_map'])
-
-	#fig.canvas.draw()
-	#fig.canvas.flush_events()
-
 	return im
 
 # Perform a single SLAM iteration. Moves the sample counter forward by a number of samples
@@ -241,8 +240,7 @@ def slam_iteration():
 		# Prepare a new list of particles
 		particle_New = np.zeros((N, 3))
 
-		# TODO: Figure out how this resamples particles?
-		# It seems to mostly re-order particles?
+		# This resamples particles from the distribution based on their weights
 		r = random.uniform(0, 1.0 / N)
 
 		c, i = weight[0], 0

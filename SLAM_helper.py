@@ -135,11 +135,14 @@ def mapConvert(scan, ori_robot, head_a, angles, particles, N, pos_phy, posX_map,
 	scan_valid = scan[indValid]
 	angles_valid = angles[indValid]
 
+	# Determines the grid locations that are hit by the sensor scan
+	# This essentially converts polar to cartesian coordinates
 	xs0 = np.array([scan_valid * np.cos(angles_valid)])
 	ys0 = np.array([scan_valid * np.sin(angles_valid)])
 
 	Y = np.concatenate([np.concatenate([np.concatenate([xs0, ys0], axis=0), np.zeros(xs0.shape)], axis=0), np.ones(xs0.shape)], axis=0)
 
+	# Create transformation matrices
 	t_b2l = getB2L(head_a)
 	t_w2b_a = getAllW2B(particles, ori_robot)
 	
@@ -181,8 +184,12 @@ def mapCorrelation(im, x_im, y_im, vp, xs, ys):
         for jx in range(0,nxs):
             x1 = vp[0,:] + xs[jx] # 1 x 1076
             ix = np.int16(np.round((x1-xmin)/xresolution))
+
+			# Create a mask that indicates which positions are valid (within the mask range)
             valid = np.logical_and(np.logical_and((iy >=0), (iy < ny)), \
                                    np.logical_and((ix >=0), (ix < nx)))
+			
+			# Count how many positions are actually occupied that the sensor expects to be occupied
             cpr[jx,jy] = np.sum(im[ix[valid],iy[valid]])
 
     return cpr
