@@ -43,11 +43,11 @@ y_range = np.array([ -0.05, 0.00, 0.05 ])
 
 # Whether to render an animated preview while calculating
 # This makes the total calculation quite a bit slower
-render_animated = False
+render_animated = True
 
 # Whether to run the QT event loop each SLAM iteration
 # This also slows down calculations, but keeps the window more responsive
-run_event_loop = False
+run_event_loop = True
 
 ### Data setup ##
 
@@ -73,10 +73,11 @@ mapfig['sizey'] = int(np.ceil((mapfig['ymax'] - mapfig['ymin']) / mapfig['res'] 
 # Actual map data
 # log_map = log likeliness of each cell being occupied
 # map = grayscale map data
-# show_map = BGR map data
+# show_map = RGB map data
 mapfig['log_map'] = np.zeros((mapfig['sizex'], mapfig['sizey']))
 mapfig['map'] = np.zeros((mapfig['sizex'], mapfig['sizey']), dtype = np.int8)
-mapfig['show_map'] = 0.5 * np.ones((mapfig['sizex'], mapfig['sizey'], 3), dtype = np.int8)
+mapfig['show_map'] = np.zeros((mapfig['sizex'], mapfig['sizey'], 3), dtype = np.uint8)
+mapfig['show_map'][:,:,:] = 128
 
 pos_phy, posX_map, posY_map = {}, {}, {}
 
@@ -217,8 +218,8 @@ def slam_iteration():
 	x_r = (np.ceil((particles[ind_best, 0] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
 	y_r = (np.ceil((particles[ind_best, 1] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
 
-	# Mark location with a blue pixel (index 0 in BGR)
-	mapfig['show_map'][x_r, y_r, 0] = 255
+	# Mark location with a blue pixel (index 0 in RGB)
+	mapfig['show_map'][x_r, y_r,:] = [ 255, 0, 0]
 
 	# Draw map 
 	# TODO: Why is best particle passed here? What is the difference between particles array and posX_map/posY_Map
@@ -293,6 +294,6 @@ else:
 	while sample <  timeline:
 		slam_iteration()
 
-im = ax.imshow(mapfig['show_map'], cmap = "hot")
+im = ax.imshow(mapfig['show_map'])
 
 plt.show()

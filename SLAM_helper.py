@@ -213,8 +213,8 @@ def drawMap(particle_cur, xis, yis, m):
 	route = (m['show_map'][:, :, 0] == 255)
 
 	m['map'][occupied] = 1
-	m['show_map'][occupied, :] = 0
-	m['show_map'][np.logical_and(empty, ~route), :] = 1
+	m['show_map'][np.logical_and(occupied, ~route), :] = 0
+	m['show_map'][np.logical_and(empty, ~route), :] = 254 # Set empty space to 254 so 255 keeps being reserved for the route
 
 	return m
 
