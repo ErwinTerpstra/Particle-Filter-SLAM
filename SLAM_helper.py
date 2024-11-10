@@ -20,6 +20,7 @@ def updateWeights(weights, corr):
 	return np.exp(wtmp)
 
 def getW2B(part_cur, ori_robot):
+	"""Calculates W2B transformation for a single particle"""
 	r, p, y = ori_robot[0], ori_robot[1], part_cur[2]
 
 	cosY = np.cos(y)
@@ -54,38 +55,54 @@ def getW2B(part_cur, ori_robot):
 	return t_w2b
 
 
-def convertFrame(part_cur, ori_robot, head_angles):
-	cosHA0 = np.cos(head_angles[0])
-	sinHA0 = np.sin(head_angles[0])
+def getAllW2B(particles, ori_robot):
+	"""Calculates W2B transformation for all particles at once"""
+	r, p, y = ori_robot[0], ori_robot[1], particles[:,2]
+	n = particles.shape[0]
 
-	cosHA1 = np.cos(head_angles[1])
-	sinHA1 = np.sin(head_angles[1])
-	
-	t_w2b = getW2B(part_cur, ori_robot)
+	cosY = np.cos(y)
+	sinY = np.sin(y)
 
-	t_b2h = np.array([[cosHA0, -sinHA0, 0, 0],
-						[sinHA0, cosHA0, 0, 0],
-						[0, 0, 1, 0.33],
-						[0, 0, 0, 1]])
+	cosP = np.cos(p)
+	sinP = np.sin(p)
 
-	t_h2l = np.array([[cosHA1, 0, sinHA1, 0],
-						[0, 1, 0, 0],
-						[-sinHA1, 0, cosHA1, 0.15],
-						[0, 0, 0, 1]])
-	
-	return np.matmul(t_w2b, t_b2h, t_h2l)
+	cosR = np.cos(r)
+	sinR = np.sin(r)
 
+	r11 = cosY * cosP
+	r12 = cosY * sinP * sinR - sinY * cosR
+	r13 = cosY * sinP * cosR + sinY * sinR
 
-def mapConvert(scan, ori_robot, head_a, angles, particles, N, pos_phy, posX_map, posY_map, m):
-	indValid = np.logical_and((scan < 30), (scan > 0.1))
-	scan_valid = scan[indValid]
-	angles_valid = angles[indValid]
+	r21 = sinY * cosP
+	r22 = sinY * sinP * sinR + cosY * cosR
+	r23 = sinY * sinP * cosR - cosY * sinR
 
-	xs0 = np.array([scan_valid * np.cos(angles_valid)])
-	ys0 = np.array([scan_valid * np.sin(angles_valid)])
+	r31 = np.full(n, -sinP)
+	r32 = np.full(n, cosP * sinR)
+	r33 = np.full(n, cosP * cosR)
 
-	Y = np.concatenate([np.concatenate([np.concatenate([xs0, ys0], axis=0), np.zeros(xs0.shape)], axis=0), np.ones(xs0.shape)], axis=0)
+	t_w2b = np.zeros((n, 4, 4))
 
+	t_w2b[:,0,0] = r11
+	t_w2b[:,0,1] = r12
+	t_w2b[:,0,2] = r13
+	t_w2b[:,1,0] = r21
+	t_w2b[:,1,1] = r22
+	t_w2b[:,1,2] = r23
+	t_w2b[:,2,0] = r31
+	t_w2b[:,2,1] = r32
+	t_w2b[:,2,2] = r33
+
+	t_w2b[:,0,3] = particles[:,0]
+	t_w2b[:,1,3] = particles[:,1]
+	t_w2b[:,2,3] = 0.93
+
+	t_w2b[:,3,3] = 1
+
+	return t_w2b
+
+def getB2L(head_a):
+	"""Calculates B2L matrix for the given head angles"""
 	cosHA0 = np.cos(head_a[0])
 	sinHA0 = np.sin(head_a[0])
 
@@ -103,9 +120,31 @@ def mapConvert(scan, ori_robot, head_a, angles, particles, N, pos_phy, posX_map,
 						[0, 0, 0, 1]])
 
 	t_b2l = np.matmul(t_b2h, t_h2l)
+	return t_b2l
 
+
+def convertFrame(part_cur, ori_robot, head_angles):
+	t_w2b = getW2B(part_cur, ori_robot)
+	t_b2l = getB2L(head_angles)
+	
+	return np.matmul(t_w2b, t_b2l)
+
+
+def mapConvert(scan, ori_robot, head_a, angles, particles, N, pos_phy, posX_map, posY_map, m):
+	indValid = np.logical_and((scan < 30), (scan > 0.1))
+	scan_valid = scan[indValid]
+	angles_valid = angles[indValid]
+
+	xs0 = np.array([scan_valid * np.cos(angles_valid)])
+	ys0 = np.array([scan_valid * np.sin(angles_valid)])
+
+	Y = np.concatenate([np.concatenate([np.concatenate([xs0, ys0], axis=0), np.zeros(xs0.shape)], axis=0), np.ones(xs0.shape)], axis=0)
+
+	t_b2l = getB2L(head_a)
+	t_w2b_a = getAllW2B(particles, ori_robot)
+	
 	for i in range(N):
-		trans_cur = np.matmul(getW2B(particles[i,:], ori_robot), t_b2l)
+		trans_cur = np.matmul(t_w2b_a[i,:,:], t_b2l)
 
 		res = np.matmul(trans_cur, Y)
 		ind_notG = res[2, :] > 0.1
@@ -116,6 +155,37 @@ def mapConvert(scan, ori_robot, head_a, angles, particles, N, pos_phy, posX_map,
 
 	return pos_phy, posX_map, posY_map
 
+# INPUT 
+# im              the map 
+# x_im,y_im       physical x,y positions of the grid map cells
+# vp(0:2,:)       occupied x,y positions from range sensor (in physical unit)  
+# xs,ys           physical x,y,positions you want to evaluate "correlation" 
+#
+# OUTPUT 
+# c               sum of the cell values of all the positions hit by range sensor
+def mapCorrelation(im, x_im, y_im, vp, xs, ys):
+    nx = im.shape[0]
+    ny = im.shape[1]
+    xmin = x_im[0]
+    xmax = x_im[-1]
+    xresolution = (xmax-xmin)/(nx-1)
+    ymin = y_im[0]
+    ymax = y_im[-1]
+    yresolution = (ymax-ymin)/(ny-1)
+    nxs = xs.size
+    nys = ys.size
+    cpr = np.zeros((nxs, nys))
+    for jy in range(0,nys):
+        y1 = vp[1,:] + ys[jy] # 1 x 1076
+        iy = np.int16(np.round((y1-ymin)/yresolution))
+        for jx in range(0,nxs):
+            x1 = vp[0,:] + xs[jx] # 1 x 1076
+            ix = np.int16(np.round((x1-xmin)/xresolution))
+            valid = np.logical_and(np.logical_and((iy >=0), (iy < ny)), \
+                                   np.logical_and((ix >=0), (ix < nx)))
+            cpr[jx,jy] = np.sum(im[ix[valid],iy[valid]])
+
+    return cpr
 
 def drawMap(particle_cur, xis, yis, m):
 	x_sensor = (np.ceil((particle_cur[0] - m['xmin']) / m['res']).astype(np.int16) - 1)

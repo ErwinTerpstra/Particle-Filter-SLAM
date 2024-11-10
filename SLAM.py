@@ -1,9 +1,10 @@
 import load_data as ld
 import numpy as np
-from SLAM_helper import *
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import MapUtils as maput
+
+from SLAM_helper import *
+
 import cv2
 import random
 import time
@@ -15,10 +16,37 @@ lid = ld.get_lidar("data/train_lidar2")
 
 #### Settings ###
 
+# Number of particles and threshold for resampling
 N, N_threshold = 100, 35
-samples_per_step = 10
-samples_per_frame = 10
-frame_limit = None
+
+# Number of samples that is skipped each iterations
+samples_per_iteration = 10
+
+# Number of iterations between rendering the map
+iterations_per_frame = 10
+
+# Number of samples to limit the simulation to (can be None for full dataset)
+sample_limit = None
+
+# Factor that is used to add noise to each particle
+# Current setting means 10x as much noise on heading as on x/y positions
+factor = np.array([1, 1, 10])
+
+# Std. dev of noise that is added
+noise_sigma = 1e-3
+
+# These offsets are used to evaluate map correlation at various offsets of the particle's actual position
+# Current settings considers a 3x3 grid for each particle
+x_range = np.array([ -0.05, 0.00, 0.05 ])
+y_range = np.array([ -0.05, 0.00, 0.05 ])
+
+# Whether to render an animated preview while calculating
+# This makes the total calculation quite a bit slower
+render_animated = True
+
+# Whether to run the QT event loop each SLAM iteration
+# This also slows down calculations, but keeps the window more responsive
+run_event_loop = True
 
 ### Data setup ##
 
@@ -51,17 +79,9 @@ mapfig['show_map'] = 0.5 * np.ones((mapfig['sizex'], mapfig['sizey'], 3), dtype 
 
 pos_phy, posX_map, posY_map = {}, {}, {}
 
-# Factor that is used to add noise to each particle
-# Current setting means 10x as much noise on heading as on x/y positions
-factor = np.array([1, 1, 10])
-
-# TODO: What is this used for?
+# Lookup table to convert map coordinate to physical positions
 x_im = np.arange(mapfig['xmin'], mapfig['xmax'] + mapfig['res'], mapfig['res'])  # x-positions of each pixel of the map
 y_im = np.arange(mapfig['ymin'], mapfig['ymax'] + mapfig['res'], mapfig['res'])  # y-positions of each pixel of the map
-
-# TODO: What is this used for?
-x_range = np.arange(-0.05, 0.06, 0.05)
-y_range = np.arange(-0.05, 0.06, 0.05)
 
 # Get joint datasets
 # TODO: What does ts, h_angle and rpy_robot mean?
@@ -79,7 +99,8 @@ mapfig = drawMap(particles[0, :], posX_map[0], posY_map[0], mapfig)
 pose_p, yaw_p = lid_p['pose'], rpy_p[0, 2]
 
 # Time keeping
-start_time = time.time()
+start_time = time.perf_counter_ns()
+last_print = 0
 correlation_time = 0
 resample_time = 0
 map_draw_time = 0
@@ -88,11 +109,28 @@ update_particles_time = 0
 update_weights_time = 0
 
 # Loop over all samples in dataset
-timeline = min(frame_limit, len(lid)) if frame_limit else len(lid)
+timeline = min(sample_limit, len(lid)) if sample_limit else len(lid)
 sample = 1
 
-#for sample in range(1, timeline, samples_per_step):
+# Function that calls the simulation in animate preview
 def animate(frame):
+	next_frame = sample + iterations_per_frame * samples_per_iteration
+	while sample < next_frame and sample < timeline:
+		slam_iteration()
+			
+		# This makes rendering a bit slower, but keeps the GUI responsive
+		if run_event_loop:
+			plt.pause(0.001)
+
+	im.set_data(mapfig['show_map'])
+
+	#fig.canvas.draw()
+	#fig.canvas.flush_events()
+
+	return im
+
+# Perform a single SLAM iteration. Moves the sample counter forward by a number of samples
+def slam_iteration():
 	global particles, weight
 	global ts, h_angle, rpy_robot
 	global lid_p, rpy_p, ind_0
@@ -100,155 +138,163 @@ def animate(frame):
 	global mapfig
 	global pose_p, yaw_p
 	global sample
-	global correlation_time, resample_time, map_draw_time, map_convert_time, update_particles_time, update_weights_time
+	global last_print
+	global correlation_time, resample_time
+	global map_draw_time, map_convert_time
+	global update_particles_time, update_weights_time
 
-	next_frame = sample + samples_per_frame * samples_per_step
-	while sample < next_frame and sample < timeline:
-		# Get current lidar data and pose measurement
-		lid_c = lid[sample]
-		pose_c, rpy_c = lid_c['pose'], lid_c['rpy']
-		scan_c = lid_c['scan']
-		yaw_c = rpy_c[0, 2]
+	# Get current lidar data and pose measurement
+	lid_c = lid[sample]
+	pose_c, rpy_c = lid_c['pose'], lid_c['rpy']
+	scan_c = lid_c['scan']
+	yaw_c = rpy_c[0, 2]
 
-		yaw_est = particles[:, 2]
+	yaw_est = particles[:, 2]
 
-		# This does some sort of reference frame conversion between previous pose and the particles
-		update_particles_start = time.time()
-		delta_x_gb = pose_c[0][0] - pose_p[0][0]
-		delta_y_gb = pose_c[0][1] - pose_p[0][1]
-		delta_theta_gb = yaw_c - yaw_p
+	# This does some sort of reference frame conversion between previous pose and the particles
+	update_particles_start = time.perf_counter_ns()
+	delta_x_gb = pose_c[0][0] - pose_p[0][0]
+	delta_y_gb = pose_c[0][1] - pose_p[0][1]
+	delta_theta_gb = yaw_c - yaw_p
 
-		delta_x_lc = (np.cos(yaw_p) * delta_x_gb) + (np.sin(yaw_p) * delta_y_gb)
-		delta_y_lc = (-np.sin(yaw_p) * delta_x_gb) + (np.cos(yaw_p) * delta_y_gb)
-		delta_theta_lc = delta_theta_gb
+	delta_x_lc = (np.cos(yaw_p) * delta_x_gb) + (np.sin(yaw_p) * delta_y_gb)
+	delta_y_lc = (-np.sin(yaw_p) * delta_x_gb) + (np.cos(yaw_p) * delta_y_gb)
+	delta_theta_lc = delta_theta_gb
 
-		delta_x_gb_new = ((np.cos(yaw_est) * delta_x_lc) - (np.sin(yaw_est) * delta_y_lc)).reshape(-1, N)
-		delta_y_gb_new = ((np.sin(yaw_est) * delta_x_lc) + (np.cos(yaw_est) * delta_y_lc)).reshape(-1, N)
-		delta_theta_gb_new = np.tile(delta_theta_lc, (1, N))
+	delta_x_gb_new = ((np.cos(yaw_est) * delta_x_lc) - (np.sin(yaw_est) * delta_y_lc)).reshape(-1, N)
+	delta_y_gb_new = ((np.sin(yaw_est) * delta_x_lc) + (np.cos(yaw_est) * delta_y_lc)).reshape(-1, N)
+	delta_theta_gb_new = np.tile(delta_theta_lc, (1, N))
 
-		# I suspect this gives us the position and heading delta for each particle based on robot measurements
-		ut = np.concatenate([np.concatenate([delta_x_gb_new, delta_y_gb_new], axis=0), delta_theta_gb_new], axis=0)
-		ut = ut.T
+	# I suspect this gives us the position and heading delta for each particle based on robot measurements
+	ut = np.concatenate([np.concatenate([delta_x_gb_new, delta_y_gb_new], axis=0), delta_theta_gb_new], axis=0)
+	ut = ut.T
 
-		# Add the robot movement to each particle position and heading
-		# Also add a little bit of noise 
-		noise = np.random.normal(0, 1e-3, (N, 1)) * factor
-		particles = particles + ut + noise
-		update_particles_time += time.time() - update_particles_start
+	# Add the robot movement to each particle position and heading
+	# Also add a little bit of noise 
+	noise = np.random.normal(0, noise_sigma, (N, 1)) * factor
+	particles = particles + ut + noise
+	update_particles_time += time.perf_counter_ns() - update_particles_start
 
-		map_convert_start = time.time()
-		ind_i = np.argmin(np.absolute(ts - lid_c['t'][0][0]))
-		pos_phy, posX_map, posY_map = mapConvert(scan_c, rpy_robot[:, ind_i], h_angle[:, ind_i], angles, particles, N, pos_phy, posX_map, posY_map, mapfig)
-		map_convert_time += time.time() - map_convert_start
+	map_convert_start = time.perf_counter_ns()
+	ind_i = np.argmin(np.absolute(ts - lid_c['t'][0][0]))
+	pos_phy, posX_map, posY_map = mapConvert(scan_c, rpy_robot[:, ind_i], h_angle[:, ind_i], angles, particles, N, pos_phy, posX_map, posY_map, mapfig)
+	map_convert_time += time.perf_counter_ns() - map_convert_start
 
-		# For each particle, calculate the correlation with the current map
-		corr_start = time.time()
-		corr = np.zeros((N, 1))
-		for i in range(N):
-			size = pos_phy[i].shape[1]
-			Y = np.concatenate([pos_phy[i], np.zeros((1, size))], axis = 0)
-			corr_cur = maput.mapCorrelation(mapfig['map'], x_im, y_im, Y[0 : 3, :], x_range, y_range)
-			ind = np.argmax(corr_cur)
+	# For each particle, calculate the correlation with the current map
+	corr_start = time.perf_counter_ns()
+	corr = np.zeros((N, 1))
+	for i in range(N):
+		# Add an extra row to the occopied positions list for this particle
+		# This is necessary since the mapCorrelation function expects a 3xN matrix (even though the 3rd row is not used)
+		size = pos_phy[i].shape[1]
+		Y = np.concatenate([pos_phy[i], np.zeros((1, size))], axis = 0)
 
-			corr[i] = corr_cur[ind / 3, ind % 3]
-			particles[i, 0] += x_range[ind / 3]
-			particles[i, 1] += y_range[ind % 3]
+		# Calculate correlation for each of the combinations in x_range/y_range
+		corr_cur = mapCorrelation(mapfig['map'], x_im, y_im, Y[0 : 3, :], x_range, y_range)
 
-		# Keep track of how much time we spend on particle correlation
-		correlation_time += time.time() - corr_start
+		# Determine which of the offsets performed best
+		ind = np.argmax(corr_cur)
 
-		# Update weight of each particle according to correlation
-		update_weights_start = time.time()
-		weight = updateWeights(weight, corr)
-		update_weights_time += time.time() - update_weights_start
+		# Store the correlation for that offset
+		corr[i] = corr_cur[ind // 3, ind % 3]
 
-		# Determine index of best particle
-		map_draw_start = time.time()
-		ind_best = weight.argmax()
+		# Update particle position according to chosen offset
+		particles[i, 0] += x_range[ind // 3]
+		particles[i, 1] += y_range[ind % 3]
 
-		# Convert location of best particle to map coordinates
-		x_r = (np.ceil((particles[ind_best, 0] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
-		y_r = (np.ceil((particles[ind_best, 1] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
+	# Keep track of how much time we spend on particle correlation
+	correlation_time += time.perf_counter_ns() - corr_start
 
-		# Mark location with a blue pixel (index 0 in BGR)
-		mapfig['show_map'][x_r, y_r, 0] = 255
+	# Update weight of each particle according to correlation
+	update_weights_start = time.perf_counter_ns()
+	weight = updateWeights(weight, corr)
+	update_weights_time += time.perf_counter_ns() - update_weights_start
 
-		# Draw map 
-		# TODO: Why is best particle passed here? What is the difference between particles array and posX_map/posY_Map
-		mapfig = drawMap(particles[ind_best, :], posX_map[ind_best], posY_map[ind_best], mapfig)
-		map_draw_time = time.time() - map_draw_start
+	# Determine index of best particle
+	map_draw_start = time.perf_counter_ns()
+	ind_best = weight.argmax()
 
-		# Keep track of previous pose and yaw
-		pose_p, yaw_p = pose_c, yaw_c
+	# Convert location of best particle to map coordinates
+	x_r = (np.ceil((particles[ind_best, 0] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
+	y_r = (np.ceil((particles[ind_best, 1] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
 
-		# Resample particles if sum of squared weights is lower than threshold
-		# Since weights always sum to 1, this seems some sort of measure of whether the 
-		# weight distribution is broad or narrow. A higher value would mean more of the weight 
-		# is "concentrated" in fewer particles, thus we have more effective particles
-		resample_start = time.time()
-		N_eff = 1 / np.sum(np.square(weight))
-		if N_eff < N_threshold:
-			#print("Resampling ({0:.2f}/{1})".format(N_eff, N_threshold))
+	# Mark location with a blue pixel (index 0 in BGR)
+	mapfig['show_map'][x_r, y_r, 0] = 255
 
-			# Prepare a new list of particles
-			particle_New = np.zeros((N, 3))
+	# Draw map 
+	# TODO: Why is best particle passed here? What is the difference between particles array and posX_map/posY_Map
+	mapfig = drawMap(particles[ind_best, :], posX_map[ind_best], posY_map[ind_best], mapfig)
+	map_draw_time += time.perf_counter_ns() - map_draw_start
 
-			# TODO: Figure out how this resamples particles?
-			# It seems to mostly re-order particles?
-			r = random.uniform(0, 1.0 / N)
+	# Keep track of previous pose and yaw
+	pose_p, yaw_p = pose_c, yaw_c
 
-			c, i = weight[0], 0
-			for m in range(N):
-				u = r + m * (1.0 / N)
-				
-				while u > c:
-					i = i + 1
-					c = c + weight[i]
+	# Resample particles if sum of squared weights is lower than threshold
+	# Since weights always sum to 1, this seems some sort of measure of whether the 
+	# weight distribution is broad or narrow. A higher value would mean more of the weight 
+	# is "concentrated" in fewer particles, thus we have more effective particles
+	resample_start = time.perf_counter_ns()
+	N_eff = 1 / np.sum(np.square(weight))
+	if N_eff < N_threshold:
+		#print("Resampling ({0:.2f}/{1})".format(N_eff, N_threshold))
 
-				# NOTE: this line was unindented, so it only ran at the end of the loop
-				# That seems like a bug to me, otherwise particles_New would mostly be empty
-				particle_New[m, :] = particles[i, :]
+		# Prepare a new list of particles
+		particle_New = np.zeros((N, 3))
 
-			particles = particle_New
+		# TODO: Figure out how this resamples particles?
+		# It seems to mostly re-order particles?
+		r = random.uniform(0, 1.0 / N)
+
+		c, i = weight[0], 0
+		for m in range(N):
+			u = r + m * (1.0 / N)
 			
-			# Reset the weight array to be uniform again
-			# (Weights for new particles are calculated next iteration)
-			weight = np.ones((N, 1)) * (1.0 / N)
+			while u > c:
+				i = i + 1
+				c = c + weight[i]
 
-		resample_time += time.time() - resample_start
+			# NOTE: this line was unindented, so it only ran at the end of the loop
+			# That seems like a bug to me, otherwise particles_New would mostly be empty
+			particle_New[m, :] = particles[i, :]
 
-		sample += samples_per_step
+		particles = particle_New
+		
+		# Reset the weight array to be uniform again
+		# (Weights for new particles are calculated next iteration)
+		weight = np.ones((N, 1)) * (1.0 / N)
 
-		# This makes rendering a bit slower, but keeps the GUI responsive
-		plt.pause(0.001)
+	resample_time += time.perf_counter_ns() - resample_start
 
-	im.set_data(mapfig['show_map'])
-
-	#fig.canvas.draw()
-	#fig.canvas.flush_events()
+	sample += samples_per_iteration
 
 	# Print timing stats
-	elapsed_time = time.time() - start_time
-	elapsed_samples = sample / float(samples_per_step)
+	if time.time() - last_print >= 0.5:
+		elapsed_time = time.perf_counter_ns() - start_time
+		elapsed_iterations = sample / float(samples_per_iteration)
+		nfactor = 1 / (1000000 * float(elapsed_iterations))
 
-	print("{0}/{1}".format(sample, timeline))
-	print("Total time: {:.1f}s; Avg. per frame: {:.1f}ms".format(elapsed_time, (elapsed_time * 1000) / elapsed_samples))
-	print("Correlation: {:.1f}ms; Resample: {:.1f}ms".format(correlation_time * 1000 / elapsed_samples, resample_time * 1000 / elapsed_samples))
-	print("Map draw: {:.1f}ms; Map convert: {:.1f}ms;".format(map_draw_time * 1000 / elapsed_samples, map_convert_time * 1000 / elapsed_samples))
-	print("Update particles: {:.1f}ms; Update weights: {:.1f}ms".format(update_particles_time * 1000 / elapsed_samples, update_weights_time * 1000 / elapsed_samples))
-	print("")
+		print("{0}/{1}".format(sample, timeline))
+		print("Total time: {:.1f}s; Avg. per frame: {:.1f}ms".format(elapsed_time / 1000000000.0, elapsed_time * nfactor))
+		print("Correlation: {:.1f}ms; Resample: {:.1f}ms".format(correlation_time * nfactor, resample_time * nfactor))
+		print("Map draw: {:.1f}ms; Map convert: {:.1f}ms;".format(map_draw_time * nfactor, map_convert_time * nfactor))
+		print("Update particles: {:.1f}ms; Update weights: {:.1f}ms".format(update_particles_time * nfactor, update_weights_time * nfactor))
+		print("")
 
-	return im
+		last_print = time.time()
 
-
+# Setup output
 fig = plt.figure(1)
 ax = fig.add_subplot(1, 1, 1)
 ax.set_title("SLAM Map")
 
-im = ax.imshow(mapfig['show_map'], cmap = "hot")
-
 # Setup the animation
-frame_count = int(np.ceil((timeline - 1) / samples_per_step / samples_per_frame))
-anim = animation.FuncAnimation(fig=fig, func=animate, frames=frame_count, interval=0)
+if render_animated:
+	frame_count = int(np.ceil((timeline - 1) / samples_per_iteration / iterations_per_frame))
+	anim = animation.FuncAnimation(fig=fig, func=animate, frames=frame_count, interval=0)
+else:
+	while sample <  timeline:
+		slam_iteration()
+
+im = ax.imshow(mapfig['show_map'], cmap = "hot")
 
 plt.show()
