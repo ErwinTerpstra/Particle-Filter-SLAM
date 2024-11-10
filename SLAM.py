@@ -1,4 +1,6 @@
-import load_data as ld
+import load_data_original as ld_original
+import load_data_rawseeds as ld_rawseeds
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -11,8 +13,33 @@ import time
 
 #### Dataset ####
 
-joint = ld.get_joint("data/train_joint2")
-lid = ld.get_lidar("data/train_lidar2")
+#dataset = 'bicocca'
+dataset = 'original'
+
+if dataset == 'original':
+	joint = ld_original.get_joint("data/Original/train_joint2")
+	lid = ld_original.get_lidar("data/Original/train_lidar2")
+
+	config = \
+	{
+		'scan_min': 0.1,
+		'scan_max': 30,
+	}
+
+	# Angle for each sample in LIDAR sweep
+	angles = np.array([np.arange(-135, 135.25, 0.25) * np.pi / 180.0])
+elif dataset == 'bicocca':
+	joint, lid = ld_rawseeds.load('data', 'Bicocca_2009-02-25b')
+
+	config = \
+	{
+		'scan_min': 0.0,
+		'scan_max': 500,
+	}
+	
+	# Angle for each sample in LIDAR sweep
+	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
+	angles = np.array([np.linspace(-90, 90, 181) * np.pi / 180.0])
 
 #### Settings ###
 
@@ -51,9 +78,6 @@ run_event_loop = True
 
 ### Data setup ##
 
-# TODO: Find out what this is used for?
-angles = np.array([np.arange(-135, 135.25, 0.25) * np.pi / 180.0])
-
 # Particle list. Each has X, Y and heading
 particles = np.zeros((N, 3))
 
@@ -86,7 +110,9 @@ x_im = np.arange(mapfig['xmin'], mapfig['xmax'] + mapfig['res'], mapfig['res']) 
 y_im = np.arange(mapfig['ymin'], mapfig['ymax'] + mapfig['res'], mapfig['res'])  # y-positions of each pixel of the map
 
 # Get joint datasets
-# TODO: What does ts, h_angle and rpy_robot mean?
+# ts = timestamp?
+# h_angle = head angles (two joints?)
+# rpy_robot = roll, pitch, yaw?
 ts = joint['ts']
 h_angle = joint['head_angles']
 rpy_robot = joint['rpy']
@@ -94,8 +120,9 @@ rpy_robot = joint['rpy']
 # Draw initial map for first dataset sample
 lid_p = lid[0]
 rpy_p = lid_p['rpy']
-ind_0 = np.argmin(np.absolute(ts - lid_p['t'][0][0]))
-pos_phy, posX_map, posY_map = mapConvert(lid_p['scan'], rpy_robot[:, ind_0], h_angle[:, ind_0], angles, particles, N, pos_phy, posX_map, posY_map, mapfig)
+
+ind_0 = np.argmin(np.absolute(ts - lid_p['t'][0][0])) # Index of closest timestamp match between datasets
+pos_phy, posX_map, posY_map = mapConvert(lid_p['scan'], rpy_robot[:, ind_0], h_angle[:, ind_0], angles, particles, N, pos_phy, posX_map, posY_map, mapfig, config)
 mapfig = drawMap(particles[0, :], posX_map[0], posY_map[0], mapfig)
 
 pose_p, yaw_p = lid_p['pose'], rpy_p[0, 2]
@@ -176,8 +203,8 @@ def slam_iteration():
 	update_particles_time += time.perf_counter_ns() - update_particles_start
 
 	map_convert_start = time.perf_counter_ns()
-	ind_i = np.argmin(np.absolute(ts - lid_c['t'][0][0]))
-	pos_phy, posX_map, posY_map = mapConvert(scan_c, rpy_robot[:, ind_i], h_angle[:, ind_i], angles, particles, N, pos_phy, posX_map, posY_map, mapfig)
+	ind_i = np.argmin(np.absolute(ts - lid_c['t'][0][0])) # Index of closest timestamp match between datasets
+	pos_phy, posX_map, posY_map = mapConvert(scan_c, rpy_robot[:, ind_i], h_angle[:, ind_i], angles, particles, N, pos_phy, posX_map, posY_map, mapfig, config)
 	map_convert_time += time.perf_counter_ns() - map_convert_start
 
 	# For each particle, calculate the correlation with the current map
@@ -218,7 +245,7 @@ def slam_iteration():
 	x_r = (np.ceil((particles[ind_best, 0] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
 	y_r = (np.ceil((particles[ind_best, 1] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
 
-	# Mark location with a blue pixel (index 0 in RGB)
+	# Mark location with a red pixel (index 0 in RGB)
 	mapfig['show_map'][x_r, y_r,:] = [ 255, 0, 0]
 
 	# Draw map 

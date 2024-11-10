@@ -19,43 +19,7 @@ def updateWeights(weights, corr):
 	# Convert the weights back from log space to "normal" space
 	return np.exp(wtmp)
 
-def getW2B(part_cur, ori_robot):
-	"""Calculates W2B transformation for a single particle"""
-	r, p, y = ori_robot[0], ori_robot[1], part_cur[2]
-
-	cosY = np.cos(y)
-	sinY = np.sin(y)
-
-	cosP = np.cos(p)
-	sinP = np.sin(p)
-
-	cosR = np.cos(r)
-	sinR = np.sin(r)
-
-	r11 = cosY * cosP
-	r12 = cosY * sinP * sinR - sinY * cosR
-	r13 = cosY * sinP * cosR + sinY * sinR
-
-	r21 = sinY * cosP
-	r22 = sinY * sinP * sinR + cosY * cosR
-	r23 = sinY * sinP * cosR - cosY * sinR
-
-	r31 = -sinP
-	r32 = cosP * sinR
-	r33 = cosP * cosR
-	
-	t_w2b = np.array(
-			[
-				[r11, r12, r13, part_cur[0]],
-				[r21, r22, r23, part_cur[1]],
-				[r31, r32, r33, 0.93],
-				[0, 0, 0, 1]
-			])
-	
-	return t_w2b
-
-
-def getAllW2B(particles, ori_robot):
+def getW2B(particles, ori_robot):
 	"""Calculates W2B transformation for all particles at once"""
 	r, p, y = ori_robot[0], ori_robot[1], particles[:,2]
 	n = particles.shape[0]
@@ -122,16 +86,8 @@ def getB2L(head_a):
 	t_b2l = np.matmul(t_b2h, t_h2l)
 	return t_b2l
 
-
-def convertFrame(part_cur, ori_robot, head_angles):
-	t_w2b = getW2B(part_cur, ori_robot)
-	t_b2l = getB2L(head_angles)
-	
-	return np.matmul(t_w2b, t_b2l)
-
-
-def mapConvert(scan, ori_robot, head_a, angles, particles, N, pos_phy, posX_map, posY_map, m):
-	indValid = np.logical_and((scan < 30), (scan > 0.1))
+def mapConvert(scan, ori_robot, head_a, angles, particles, N, pos_phy, posX_map, posY_map, m, config):
+	indValid = np.logical_and((scan < config['scan_max']), (scan > config['scan_min']))
 	scan_valid = scan[indValid]
 	angles_valid = angles[indValid]
 
@@ -143,11 +99,13 @@ def mapConvert(scan, ori_robot, head_a, angles, particles, N, pos_phy, posX_map,
 	Y = np.concatenate([np.concatenate([np.concatenate([xs0, ys0], axis=0), np.zeros(xs0.shape)], axis=0), np.ones(xs0.shape)], axis=0)
 
 	# Create transformation matrices
+	# w2b converts from world orientation to robot local orientation
+	# b2l converts from robot base orientation to robot head local orientation
+	t_w2b = getW2B(particles, ori_robot)
 	t_b2l = getB2L(head_a)
-	t_w2b_a = getAllW2B(particles, ori_robot)
 	
 	for i in range(N):
-		trans_cur = np.matmul(t_w2b_a[i,:,:], t_b2l)
+		trans_cur = np.matmul(t_w2b[i,:,:], t_b2l)
 
 		res = np.matmul(trans_cur, Y)
 		ind_notG = res[2, :] > 0.1
