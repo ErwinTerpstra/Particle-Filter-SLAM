@@ -13,8 +13,8 @@ import time
 
 #### Dataset ####
 
-dataset = 'bicocca'
-#dataset = 'original'
+#dataset = 'bicocca'
+dataset = 'original'
 
 if dataset == 'original':
 	joint = ld_original.get_joint("data/Original/train_joint2")
