@@ -13,8 +13,9 @@ import time
 
 #### Dataset ####
 
-#dataset = 'bicocca'
-dataset = 'original'
+mapfig = {}
+dataset = 'bicocca'
+#dataset = 'original'
 
 if dataset == 'original':
 	joint = ld_original.get_joint("data/Original/train_joint2")
@@ -26,20 +27,38 @@ if dataset == 'original':
 		'scan_max': 30,
 	}
 
+	mapfig['res'] = 0.05
+	mapfig['xmin'] = -40
+	mapfig['ymin'] = -40
+	mapfig['xmax'] = 40
+	mapfig['ymax'] = 40
+
 	# Angle for each sample in LIDAR sweep
 	angles = np.array([np.arange(-135, 135.25, 0.25) * np.pi / 180.0])
+
+	# General scale parameter to change order of magnitude of several parameters
+	parameter_scale = 1
 elif dataset == 'bicocca':
 	joint, lid = ld_rawseeds.load('data', 'Bicocca_2009-02-25b')
 
 	config = \
 	{
-		'scan_min': 0.0,
+		'scan_min': 0.1,
 		'scan_max': 500,
 	}
 	
+	mapfig['res'] = 0.1
+	mapfig['xmin'] = -250
+	mapfig['ymin'] = -250
+	mapfig['xmax'] = 250
+	mapfig['ymax'] = 250
+	
 	# Angle for each sample in LIDAR sweep
 	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
-	angles = np.array([np.linspace(-90, 90, 181) * np.pi / 180.0])
+	angles = np.linspace(-90, 90, 181) * np.pi / 180.0
+
+	# General scale parameter to change order of magnitude of several parameters
+	parameter_scale = 10
 
 #### Settings ###
 
@@ -47,7 +66,8 @@ elif dataset == 'bicocca':
 N, N_threshold = 100, 35
 
 # Number of samples that is skipped each iterations
-samples_per_iteration = 10
+# Only for testing, otherwise should be set to 1
+samples_per_iteration = 1
 
 # Number of iterations between rendering the map
 # Only used in when render_animated is True (below)
@@ -61,12 +81,12 @@ sample_limit = None
 factor = np.array([1, 1, 10])
 
 # Std. dev of noise that is added
-noise_sigma = 1e-3
+noise_sigma = 1e-3 * parameter_scale
 
 # These offsets are used to evaluate map correlation at various offsets of the particle's actual position
 # Current settings considers a 3x3 grid for each particle
-x_range = np.array([ -0.05, 0.00, 0.05 ])
-y_range = np.array([ -0.05, 0.00, 0.05 ])
+x_range = np.array([ -0.05, 0.00, 0.05 ]) * parameter_scale
+y_range = np.array([ -0.05, 0.00, 0.05 ]) * parameter_scale
 
 # Whether to render an animated preview while calculating
 # This makes the total calculation quite a bit slower
@@ -85,12 +105,6 @@ particles = np.zeros((N, 3))
 weight = np.ones((N, 1)) * (1.0 / N)
 
 # Map drawing parameters
-mapfig = {}
-mapfig['res'] = 0.05
-mapfig['xmin'] = -40
-mapfig['ymin'] = -40
-mapfig['xmax'] = 40
-mapfig['ymax'] = 40
 mapfig['sizex'] = int(np.ceil((mapfig['xmax'] - mapfig['xmin']) / mapfig['res'] + 1))
 mapfig['sizey'] = int(np.ceil((mapfig['ymax'] - mapfig['ymin']) / mapfig['res'] + 1))
 
