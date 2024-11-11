@@ -26,8 +26,8 @@ def load(dataset_folder, dataset_name):
 	#
 
 	# Limit number of rows for quicker testing
-	#max_rows = 100000 
-	max_rows = None
+	max_rows = 50000 
+	#max_rows = None
 
 
 	datafile_prefix = f'{dataset_folder}\\{dataset_name}\\{dataset_name}'

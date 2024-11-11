@@ -23,17 +23,19 @@ dataset = 'bicocca'  # Options: 'original', 'bicocca'
 render_animated = False  # Whether to render an animated preview while calculating to speed up calculation
 run_event_loop = False  # Whether to run the QT event loop each iteration to speed up calculation
 
-# General scale factor for parameter adjustments (e.g., noise scaling)
-parameter_scale = 1  # Scale factor for parameters (affects noise)
-
 # Particle filter configuration
 N, N_threshold = 200, 35  # Number of particles and resampling threshold
 samples_per_iteration = 1000  # Number of samples to skip each iteration (for testing)
 iterations_per_frame = 50  # Number of iterations between rendering map frames
 
 # Map and particle noise configuration
-noise_sigma = 1e-3 * parameter_scale  # Noise standard deviation for particles
+noise_sigma = 1e-3 # Noise standard deviation for particles
 factor = np.array([1, 1, 10])  # Noise factor for heading (yaw) and position (x, y)
+
+# These offsets are used to evaluate map correlation at various offsets of the particle's actual position
+# Current settings considers a 3x3 grid for each particle
+x_range = np.array([ -0.05, 0.00, 0.05 ])
+y_range = np.array([ -0.05, 0.00, 0.05 ])
 
 # Number of samples to limit the simulation to (can be None for full dataset)
 sample_limit = None
@@ -60,13 +62,10 @@ if dataset == 'original':
 
 	# Angle for each sample in LIDAR sweep
 	angles = np.array([np.arange(-135, 135.25, 0.25) * np.pi / 180.0])
-
-	# General scale parameter to change order of magnitude of several parameters
-	parameter_scale = 1
 elif dataset == 'bicocca':
 	joint, lid, timestamp_tree, positions = ld_rawseeds.load('data', 'Bicocca_2009-02-25b')
 
-	config = {'scan_min': 0.1,'scan_max': 500}
+	config = {'scan_min': 0.1,'scan_max': 80}
 	
 	mapfig['res'] = 0.1
 	mapfig['xmin'] = -250
@@ -77,17 +76,6 @@ elif dataset == 'bicocca':
 	# Angle for each sample in LIDAR sweep
 	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
 	angles = np.linspace(-90, 90, 181) * np.pi / 180.0
-
-	# General scale parameter to change order of magnitude of several parameters
-	parameter_scale = 10
-
-#### Settings ###
-
-# These offsets are used to evaluate map correlation at various offsets of the particle's actual position
-# Current settings considers a 3x3 grid for each particle
-x_range = np.array([ -0.05, 0.00, 0.05 ]) * parameter_scale
-y_range = np.array([ -0.05, 0.00, 0.05 ]) * parameter_scale
-
 
 ### Data setup ##
 
@@ -352,6 +340,8 @@ if render_animated:
 else:
 	while sample <  timeline:
 		slam_iteration()
+
+	updateDisplayMap(mapfig)
 
 im = ax.imshow(mapfig['show_map'])
 
