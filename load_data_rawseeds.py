@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.spatial import KDTree
+
 
 def lerp(x, y, t):
 	return x + (y - x) * t
@@ -27,20 +29,29 @@ def load(dataset_folder, dataset_name):
 	#max_rows = 100000 
 	max_rows = None
 
-	print(f'Loading RAWSEEDS dataset {dataset_name}...')
 
-	datafile_prefix = f'{dataset_folder}/{dataset_name}/{dataset_name}'
+	datafile_prefix = f'{dataset_folder}\\{dataset_name}\\{dataset_name}'
 	sick_front_file = f'{datafile_prefix}-SICK_FRONT.csv'
 	odometry_file = f'{datafile_prefix}-ODOMETRY_XYT.csv'
+	groundtruth_file = f'{datafile_prefix}-GROUNDTRUTH.csv'
 
 	scan = np.genfromtxt(sick_front_file, delimiter=',', max_rows=max_rows)
-	odometry = np.genfromtxt(odometry_file, delimiter=',', max_rows=max_rows)
+	odometry = np.genfromtxt(odometry_file, delimiter=',')
+	groundtruth = np.genfromtxt(groundtruth_file, delimiter=',')
+
+	# Extract timestamps and positions for KDTree matching
+	timestamps = groundtruth[:, 0]  # First column: Timestamps
+	positions = groundtruth[:, 1:3]  # Columns 1 and 2: X and Y positions
+
+	# Create KDTree for efficient timestamp matching
+	timestamp_tree = KDTree(timestamps.reshape(-1, 1))
 
 	# LIDAR data is leading in determining sample count
 	sample_count = scan.shape[0]
 
 	print(f"Scan: {scan.shape}")
 	print(f"Odo: {odometry.shape}")
+	print(f"Groundtruth: {groundtruth.shape}")
 
 	# Setup data arrays based on desired output format
 	# Initialize pose and RPY to zero since they will be filled from odometry data
@@ -106,4 +117,4 @@ def load(dataset_folder, dataset_name):
 		'head_angles': np.zeros((2, sample_count))
 	}
 
-	return joints, lidar
+	return joints, lidar, timestamp_tree, positions

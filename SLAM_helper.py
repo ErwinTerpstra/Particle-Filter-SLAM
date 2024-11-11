@@ -162,7 +162,8 @@ def drawMap(particle_cur, xis, yis, m):
 	m['log_map'][xis, yis] += 2 * np.log(9)
 	polygon = np.zeros((m['sizey'], m['sizex']))
 
-	occupied_ind = np.vstack((y_occupied, x_occupied)).T
+	occupied_ind = np.vstack((y_occupied, x_occupied)).T.astype(np.int32)
+
 	cv2.drawContours(image = polygon, contours = [occupied_ind], contourIdx = 0, color = np.log(1.0 / 9), thickness = -1)
 	m['log_map'] += polygon
 

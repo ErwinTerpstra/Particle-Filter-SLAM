@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 from SLAM_helper import *
-
+from scipy.spatial import KDTree
 import cv2
 import random
 import time
@@ -16,7 +16,7 @@ import time
 ## Hyper parameters
 # ---------------------------------------------------------------------------------------------------------------------#
 # Dataset configuration: Choose between 'original' or 'bicocca'
-dataset = 'original'  # Options: 'original', 'bicocca'
+dataset = 'bicocca'  # Options: 'original', 'bicocca'
 
 
 # Rendering and event loop configuration
@@ -27,9 +27,9 @@ run_event_loop = False  # Whether to run the QT event loop each iteration to spe
 parameter_scale = 1  # Scale factor for parameters (affects noise)
 
 # Particle filter configuration
-N, N_threshold = 100, 35  # Number of particles and resampling threshold
-samples_per_iteration = 10  # Number of samples to skip each iteration (for testing)
-iterations_per_frame = 500  # Number of iterations between rendering map frames
+N, N_threshold = 200, 35  # Number of particles and resampling threshold
+samples_per_iteration = 1000  # Number of samples to skip each iteration (for testing)
+iterations_per_frame = 50  # Number of iterations between rendering map frames
 
 # Map and particle noise configuration
 noise_sigma = 1e-3 * parameter_scale  # Noise standard deviation for particles
@@ -43,6 +43,8 @@ sample_limit = None
 # ---------------------------------------------------------------------------------------------------------------------#
 
 mapfig = {}
+
+rmse_values = []
 
 if dataset == 'original':
 	joint = ld_original.get_joint("data/Original/train_joint2")
@@ -62,7 +64,7 @@ if dataset == 'original':
 	# General scale parameter to change order of magnitude of several parameters
 	parameter_scale = 1
 elif dataset == 'bicocca':
-	joint, lid = ld_rawseeds.load('data', 'Bicocca_2009-02-25b')
+	joint, lid, timestamp_tree, positions = ld_rawseeds.load('data', 'Bicocca_2009-02-25b')
 
 	config = {'scan_min': 0.1,'scan_max': 500}
 	
@@ -96,17 +98,17 @@ particles = np.zeros((N, 3))
 weight = np.ones((N, 1)) * (1.0 / N)
 
 # Map drawing parameters
-mapfig['sizex'] = int(np.ceil((mapfig['xmax'] - mapfig['xmin']) / mapfig['res'] + 1))
-mapfig['sizey'] = int(np.ceil((mapfig['ymax'] - mapfig['ymin']) / mapfig['res'] + 1))
+mapfig['sizex'] = int(np.ceil((mapfig['xmax'] - mapfig['xmin']) / mapfig['res'] + 1)) # sizex = x-size of the map
+mapfig['sizey'] = int(np.ceil((mapfig['ymax'] - mapfig['ymin']) / mapfig['res'] + 1)) # sizey = y-size of the map
 
 # Actual map data
 # log_map = log likeliness of each cell being occupied
 # map = grayscale map data
 # show_map = RGB map data
-mapfig['log_map'] = np.zeros((mapfig['sizex'], mapfig['sizey']))
-mapfig['map'] = np.zeros((mapfig['sizex'], mapfig['sizey']), dtype = np.int8)
-mapfig['show_map'] = np.zeros((mapfig['sizex'], mapfig['sizey'], 3), dtype = np.uint8)
-mapfig['show_map'][:,:,:] = 128
+mapfig['log_map'] = np.zeros((mapfig['sizex'], mapfig['sizey'])) # np-array with cell for each pixel and size equal to map drawing
+mapfig['map'] = np.zeros((mapfig['sizex'], mapfig['sizey']), dtype = np.int8) # np-array with grey value cell for each pixel and size equal to map drawing
+mapfig['show_map'] = np.zeros((mapfig['sizex'], mapfig['sizey'], 3), dtype = np.uint8) # np-array with color value for cell for each pixel and size equal to map drawing
+mapfig['show_map'][:,:,:] = 128 # all colors set to grey
 
 pos_phy, posX_map, posY_map = {}, {}, {}
 
@@ -152,10 +154,12 @@ def animate(frame):
 	next_frame = sample + iterations_per_frame * samples_per_iteration
 	while sample < next_frame and sample < timeline:
 		slam_iteration()
+		if rmse_values:
+			average_rmse = np.mean(rmse_values)
+			print(f"Average RMSE: {average_rmse}")
 			
-		# This makes rendering a bit slower, but keeps the GUI responsive
 		if run_event_loop:
-			plt.pause(0.001)
+			plt.pause(0.001) # pause interval (This makes rendering a bit slower, but keeps the GUI responsive)
 
 	# Update the image drawer
 	im.set_data(mapfig['show_map'])
@@ -174,7 +178,10 @@ def slam_iteration():
 	global correlation_time, resample_time
 	global map_draw_time, map_convert_time
 	global update_particles_time, update_weights_time
-
+	global rmse_values
+	global current_avg_rmse
+	global timestamp_tree
+	
 	# Get current lidar data and pose measurement
 	lid_c = lid[sample]
 	pose_c, rpy_c = lid_c['pose'], lid_c['rpy']
@@ -184,7 +191,7 @@ def slam_iteration():
 	yaw_est = particles[:, 2]
 
 	# This does some sort of reference frame conversion between previous pose and the particles
-	update_particles_start = time.perf_counter_ns()
+	update_particles_start = time.perf_counter_ns() # Start timer
 	delta_x_gb = pose_c[0][0] - pose_p[0][0]
 	delta_y_gb = pose_c[0][1] - pose_p[0][1]
 	delta_theta_gb = yaw_c - yaw_p
@@ -202,18 +209,17 @@ def slam_iteration():
 	ut = ut.T
 
 	# Add the robot movement to each particle position and heading
-	# Also add a little bit of noise 
-	noise = np.random.normal(0, noise_sigma, (N, 1)) * factor
-	particles = particles + ut + noise
-	update_particles_time += time.perf_counter_ns() - update_particles_start
+	noise = np.random.normal(0, noise_sigma, (N, 1)) * factor # Calculate noise
+	particles = particles + ut + noise # New position + noise 
+	update_particles_time += time.perf_counter_ns() - update_particles_start # particle runtime to particle time
 
-	map_convert_start = time.perf_counter_ns()
+	map_convert_start = time.perf_counter_ns() # start timer
 	ind_i = np.argmin(np.absolute(ts - lid_c['t'][0][0])) # Index of closest timestamp match between datasets
 	pos_phy, posX_map, posY_map = mapConvert(scan_c, rpy_robot[:, ind_i], h_angle[:, ind_i], angles, particles, N, pos_phy, posX_map, posY_map, mapfig, config)
-	map_convert_time += time.perf_counter_ns() - map_convert_start
+	map_convert_time += time.perf_counter_ns() - map_convert_start # map convert runtime to map convert time
 
 	# For each particle, calculate the correlation with the current map
-	corr_start = time.perf_counter_ns()
+	corr_start = time.perf_counter_ns() #start timer
 	corr = np.zeros((N, 1))
 	for i in range(N):
 		# Add an extra row to the occopied positions list for this particle
@@ -250,7 +256,26 @@ def slam_iteration():
 	x_r = (np.ceil((particles[ind_best, 0] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
 	y_r = (np.ceil((particles[ind_best, 1] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
 
-	# Mark location with a red pixel (index 0 in RGB)
+	# Extract SLAM estimate (timestamp, x, y)
+	estimated_timestamp = pose_c[0]
+	estimated_timestamp = estimated_timestamp[0]
+
+	if estimated_timestamp.ndim > 1:
+		estimated_timestamp = estimated_timestamp.flatten()
+
+	est_x, est_y = particles[ind_best, 0], particles[ind_best, 1]
+
+    # Find the closest ground truth position using KDTree
+	distance, index = timestamp_tree.query(estimated_timestamp)
+	true_x, true_y = positions[index]  # Ground truth x, y coordinates
+
+    # Calculate RMSE for the current sample
+	rmse = np.sqrt((true_x - est_x) ** 2 + (true_y - est_y) ** 2)
+	rmse_values.append(rmse)
+	if rmse_values:
+		current_avg_rmse = np.mean(rmse_values)
+
+# Mark location with a red pixel (index 0 in RGB)
 	mapfig['show_map'][x_r, y_r,:] = [ 255, 0, 0]
 
 	# Draw map 
@@ -307,8 +332,10 @@ def slam_iteration():
 		print("{0}/{1}".format(sample, timeline))
 		print("Total time: {:.1f}s; Avg. per frame: {:.1f}ms".format(elapsed_time / 1000000000.0, elapsed_time * nfactor))
 		print("Correlation: {:.1f}ms; Resample: {:.1f}ms".format(correlation_time * nfactor, resample_time * nfactor))
+		print(f"Current average RMSE: {current_avg_rmse:.4f} meters")
 		print("Map draw: {:.1f}ms; Map convert: {:.1f}ms;".format(map_draw_time * nfactor, map_convert_time * nfactor))
 		print("Update particles: {:.1f}ms; Update weights: {:.1f}ms".format(update_particles_time * nfactor, update_weights_time * nfactor))
+
 		print("")
 
 		last_print = time.time()
@@ -329,3 +356,7 @@ else:
 im = ax.imshow(mapfig['show_map'])
 
 plt.show()
+
+if rmse_values:
+    final_rmse = np.mean(rmse_values)
+    print(f"Final RMSE between estimated position and ground truth: {final_rmse:.4f} meters")
