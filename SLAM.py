@@ -11,21 +11,44 @@ import cv2
 import random
 import time
 
-#### Dataset ####
+
+# ---------------------------------------------------------------------------------------------------------------------#
+## Hyper parameters
+# ---------------------------------------------------------------------------------------------------------------------#
+# Dataset configuration: Choose between 'original' or 'bicocca'
+dataset = 'original'  # Options: 'original', 'bicocca'
+
+
+# Rendering and event loop configuration
+render_animated = False  # Whether to render an animated preview while calculating to speed up calculation
+run_event_loop = False  # Whether to run the QT event loop each iteration to speed up calculation
+
+# General scale factor for parameter adjustments (e.g., noise scaling)
+parameter_scale = 1  # Scale factor for parameters (affects noise)
+
+# Particle filter configuration
+N, N_threshold = 100, 35  # Number of particles and resampling threshold
+samples_per_iteration = 10  # Number of samples to skip each iteration (for testing)
+iterations_per_frame = 500  # Number of iterations between rendering map frames
+
+# Map and particle noise configuration
+noise_sigma = 1e-3 * parameter_scale  # Noise standard deviation for particles
+factor = np.array([1, 1, 10])  # Noise factor for heading (yaw) and position (x, y)
+
+# Number of samples to limit the simulation to (can be None for full dataset)
+sample_limit = None
+
+# ---------------------------------------------------------------------------------------------------------------------#
+## Script
+# ---------------------------------------------------------------------------------------------------------------------#
 
 mapfig = {}
-dataset = 'bicocca'
-#dataset = 'original'
 
 if dataset == 'original':
 	joint = ld_original.get_joint("data/Original/train_joint2")
 	lid = ld_original.get_lidar("data/Original/train_lidar2")
 
-	config = \
-	{
-		'scan_min': 0.1,
-		'scan_max': 30,
-	}
+	config = {'scan_min': 0.1,'scan_max': 30}
 
 	mapfig['res'] = 0.05
 	mapfig['xmin'] = -40
@@ -41,11 +64,7 @@ if dataset == 'original':
 elif dataset == 'bicocca':
 	joint, lid = ld_rawseeds.load('data', 'Bicocca_2009-02-25b')
 
-	config = \
-	{
-		'scan_min': 0.1,
-		'scan_max': 500,
-	}
+	config = {'scan_min': 0.1,'scan_max': 500}
 	
 	mapfig['res'] = 0.1
 	mapfig['xmin'] = -250
@@ -62,39 +81,11 @@ elif dataset == 'bicocca':
 
 #### Settings ###
 
-# Number of particles and threshold for resampling
-N, N_threshold = 100, 35
-
-# Number of samples that is skipped each iterations
-# Only for testing, otherwise should be set to 1
-samples_per_iteration = 1
-
-# Number of iterations between rendering the map
-# Only used in when render_animated is True (below)
-iterations_per_frame = 10
-
-# Number of samples to limit the simulation to (can be None for full dataset)
-sample_limit = None
-
-# Factor that is used to add noise to each particle
-# Current setting means 10x as much noise on heading as on x/y positions
-factor = np.array([1, 1, 10])
-
-# Std. dev of noise that is added
-noise_sigma = 1e-3 * parameter_scale
-
 # These offsets are used to evaluate map correlation at various offsets of the particle's actual position
 # Current settings considers a 3x3 grid for each particle
 x_range = np.array([ -0.05, 0.00, 0.05 ]) * parameter_scale
 y_range = np.array([ -0.05, 0.00, 0.05 ]) * parameter_scale
 
-# Whether to render an animated preview while calculating
-# This makes the total calculation quite a bit slower
-render_animated = True
-
-# Whether to run the QT event loop each SLAM iteration
-# This also slows down calculations, but keeps the window more responsive
-run_event_loop = True
 
 ### Data setup ##
 
