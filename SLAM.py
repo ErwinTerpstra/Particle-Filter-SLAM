@@ -68,10 +68,10 @@ elif dataset == 'bicocca':
 	config = {'scan_min': 0.1,'scan_max': 80}
 	
 	mapfig['res'] = 0.1
-	mapfig['xmin'] = -250
-	mapfig['ymin'] = -250
-	mapfig['xmax'] = 250
-	mapfig['ymax'] = 250
+	mapfig['xmin'] = -100
+	mapfig['ymin'] = -100
+	mapfig['xmax'] = 100
+	mapfig['ymax'] = 100
 	
 	# Angle for each sample in LIDAR sweep
 	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
@@ -144,12 +144,12 @@ def animate(frame):
 		slam_iteration()
 		if rmse_values:
 			average_rmse = np.mean(rmse_values)
-			print(f"Average RMSE: {average_rmse}")
 			
 		if run_event_loop:
 			plt.pause(0.001) # pause interval (This makes rendering a bit slower, but keeps the GUI responsive)
 
 	# Update the image drawer
+	updateDisplayMap(mapfig)
 	im.set_data(mapfig['show_map'])
 	return im
 
@@ -263,7 +263,7 @@ def slam_iteration():
 	if rmse_values:
 		current_avg_rmse = np.mean(rmse_values)
 
-# Mark location with a red pixel (index 0 in RGB)
+	# Mark location with a red pixel (index 0 in RGB)
 	mapfig['show_map'][x_r, y_r,:] = [ 255, 0, 0]
 
 	# Draw map 
@@ -318,9 +318,9 @@ def slam_iteration():
 		nfactor = 1 / (1000000 * float(elapsed_iterations))
 
 		print("{0}/{1}".format(sample, timeline))
+		print(f"Current average RMSE: {current_avg_rmse:.4f} meters")
 		print("Total time: {:.1f}s; Avg. per frame: {:.1f}ms".format(elapsed_time / 1000000000.0, elapsed_time * nfactor))
 		print("Correlation: {:.1f}ms; Resample: {:.1f}ms".format(correlation_time * nfactor, resample_time * nfactor))
-		print(f"Current average RMSE: {current_avg_rmse:.4f} meters")
 		print("Map draw: {:.1f}ms; Map convert: {:.1f}ms;".format(map_draw_time * nfactor, map_convert_time * nfactor))
 		print("Update particles: {:.1f}ms; Update weights: {:.1f}ms".format(update_particles_time * nfactor, update_weights_time * nfactor))
 
@@ -333,11 +333,12 @@ fig = plt.figure(1)
 ax = fig.add_subplot(1, 1, 1)
 ax.set_title("SLAM Map")
 
-# Setup the animation
 if render_animated:
+	# Setup the animation
 	frame_count = int(np.ceil((timeline - 1) / samples_per_iteration / iterations_per_frame))
 	anim = animation.FuncAnimation(fig=fig, func=animate, frames=frame_count, interval=0)
 else:
+	# Run all iterations
 	while sample <  timeline:
 		slam_iteration()
 
