@@ -112,7 +112,7 @@ def load(dataset_folder, dataset_name):
 			't': t[i,:,:],
 			'pose': pose[i,:,:],
 			'rpy': rpy[i,:,:],
-			'scan': np.concatenate([scan_front[i,:], scan_rear[i,:]])
+			'scan': np.concatenate([scan_front[i,:], scan_rear_resampled[i,:]])
 		} 
 		for i in range(sample_count) 
 	]
