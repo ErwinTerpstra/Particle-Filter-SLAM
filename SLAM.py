@@ -152,7 +152,12 @@ def animate(frame):
 
 	# Update the image drawer
 	updateDisplayMap(mapfig)
+
+	if render_particles:
+		drawParticles(mapfig, scatter, particles)
+
 	im.set_data(mapfig['show_map'])
+
 	return im
 
 # Perform a single SLAM iteration. Moves the sample counter forward by a number of samples
@@ -185,6 +190,12 @@ def slam_iteration():
 	delta_x_gb = pose_c[0][0] - pose_p[0][0]
 	delta_y_gb = pose_c[0][1] - pose_p[0][1]
 	delta_theta_gb = yaw_c - yaw_p
+	
+	while delta_theta_gb > np.pi:
+		delta_theta_gb -= np.pi * 2
+	
+	while delta_theta_gb < -np.pi:
+		delta_theta_gb += np.pi * 2
 
 	delta_x_lc = (np.cos(yaw_p) * delta_x_gb) + (np.sin(yaw_p) * delta_y_gb)
 	delta_y_lc = (-np.sin(yaw_p) * delta_x_gb) + (np.cos(yaw_p) * delta_y_gb)
@@ -347,6 +358,7 @@ else:
 	updateDisplayMap(mapfig)
 
 im = ax.imshow(mapfig['show_map'])
+scatter = ax.scatter([], [], s=0.1)
 
 plt.show()
 
