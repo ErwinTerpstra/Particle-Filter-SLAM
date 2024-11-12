@@ -68,14 +68,16 @@ elif dataset == 'bicocca':
 	config = {'scan_min': 0.1,'scan_max': 80}
 	
 	mapfig['res'] = 0.1
-	mapfig['xmin'] = -100
-	mapfig['ymin'] = -100
-	mapfig['xmax'] = 100
-	mapfig['ymax'] = 100
+	mapfig['xmin'] = -150
+	mapfig['ymin'] = -150
+	mapfig['xmax'] = 150
+	mapfig['ymax'] = 150
 	
 	# Angle for each sample in LIDAR sweep
 	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
-	angles = np.linspace(-90, 90, 181) * np.pi / 180.0
+	# SICK rear sensor has 181 samples in the full rear 180 degree range
+	# This means there's probably 2 samples overlapping at +/-90 degrees, which makes the lineair space division slightly incorrect
+	angles = np.linspace(-90, 270, 362) * np.pi / 180.0
 
 ### Data setup ##
 

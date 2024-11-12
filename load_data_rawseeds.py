@@ -32,39 +32,46 @@ def load(dataset_folder, dataset_name):
 
 	datafile_prefix = f'{dataset_folder}\\{dataset_name}\\{dataset_name}'
 	sick_front_file = f'{datafile_prefix}-SICK_FRONT.csv'
+	sick_rear_file = f'{datafile_prefix}-SICK_REAR.csv'
 	odometry_file = f'{datafile_prefix}-ODOMETRY_XYT.csv'
 	groundtruth_file = f'{datafile_prefix}-GROUNDTRUTH.csv'
 
-	scan = np.genfromtxt(sick_front_file, delimiter=',', max_rows=max_rows)
-	odometry = np.genfromtxt(odometry_file, delimiter=',')
-	groundtruth = np.genfromtxt(groundtruth_file, delimiter=',')
+	scan_front = np.genfromtxt(sick_front_file, delimiter=',', max_rows=max_rows)
+	scan_rear = np.genfromtxt(sick_rear_file, delimiter=',', max_rows=max_rows)
+	odometry = np.genfromtxt(odometry_file, delimiter=',', max_rows=max_rows)
+	groundtruth = np.genfromtxt(groundtruth_file, delimiter=',', max_rows=max_rows)
 
 	# Extract timestamps and positions for KDTree matching
 	timestamps = groundtruth[:, 0]  # First column: Timestamps
 	positions = groundtruth[:, 1:3]  # Columns 1 and 2: X and Y positions
 
 	# Create KDTree for efficient timestamp matching
-	timestamp_tree = KDTree(timestamps.reshape(-1, 1))
+	ts_tree_groundtruth = KDTree(timestamps.reshape(-1, 1))
+	ts_tree_scan_rear = KDTree(scan_rear[:, 0].reshape(-1, 1))
 
 	# LIDAR data is leading in determining sample count
-	sample_count = scan.shape[0]
+	sample_count = scan_front.shape[0]
 
-	print(f"Scan: {scan.shape}")
+	print(f"Scan front: {scan_front.shape}")
+	print(f"Scan rear: {scan_rear.shape}")
 	print(f"Odo: {odometry.shape}")
 	print(f"Groundtruth: {groundtruth.shape}")
 
 	# Setup data arrays based on desired output format
+	# Rear scan data will be resampled and merged to front scan data
 	# Initialize pose and RPY to zero since they will be filled from odometry data
-	t = scan[:,0].reshape((sample_count, 1, 1))
+	t = scan_front[:,0].reshape((sample_count, 1, 1))
+	scan_front = scan_front[:,3:]
+	scan_rear = scan_rear[:,3:]
+	scan_rear_resampled = np.zeros((sample_count, scan_front.shape[1]))
 	pose = np.zeros((sample_count, 1, 2))
 	rpy = np.zeros((sample_count, 1, 3))
-	scan = scan[:,3:]
-
+ 
 	# Merge position and yaw data to lidar data
 	odo_i = 0
 	odo_n = odometry.shape[0]
 	for i in range(sample_count):
-		desired_ts = scan[i, 0]
+		desired_ts = t[i,0,0]
 
 		# Find between which odo samples this lidar sample falls
 		while True:
@@ -84,6 +91,9 @@ def load(dataset_folder, dataset_name):
 				break
 
 			odo_i += 1
+
+		# Find which rear scan sample to use
+		scan_rear_ts_delta, scan_rear_i = ts_tree_scan_rear.query(desired_ts)
 		
 		# Lerp odomery data based on the found sample range
 		x = lerp(odometry[odo_i, 4], odometry[odo_i + 1, 4], odo_f)
@@ -93,6 +103,7 @@ def load(dataset_folder, dataset_name):
 		pose[i, 0, 0] = x
 		pose[i, 0, 1] = y
 		rpy[i, 0, 2] = heading
+		scan_rear_resampled[i,:] = scan_rear[scan_rear_i,:]
 
 	# Lidar dataset
 	lidar = \
@@ -101,7 +112,7 @@ def load(dataset_folder, dataset_name):
 			't': t[i,:,:],
 			'pose': pose[i,:,:],
 			'rpy': rpy[i,:,:],
-			'scan': scan[i,:]
+			'scan': np.concatenate([scan_front[i,:], scan_rear[i,:]])
 		} 
 		for i in range(sample_count) 
 	]
@@ -117,4 +128,4 @@ def load(dataset_folder, dataset_name):
 		'head_angles': np.zeros((2, sample_count))
 	}
 
-	return joints, lidar, timestamp_tree, positions
+	return joints, lidar, ts_tree_groundtruth, positions
