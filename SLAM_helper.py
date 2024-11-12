@@ -180,3 +180,11 @@ def updateDisplayMap(m):
 	m['show_map'][np.logical_and(occupied, ~route), :] = 0
 	m['show_map'][np.logical_and(empty, ~route), :] = 254 # Set empty space to 254 so 255 keeps being reserved for the route
 
+def drawParticles(m, scatter, particles):
+	# Convert particle positions to map coordinates
+	particles_x = (np.ceil((particles[:,0] - m['xmin']) / m['res']).astype(np.int16) - 1)
+	particles_y = (np.ceil((particles[:,1] - m['ymin']) / m['res']).astype(np.int16) - 1)
+
+	# Map is rendered with X coordinates as first dimension instead of Y
+	# So we need to swap X and Y here
+	scatter.set_offsets(np.array([particles_y, particles_x]).T)

@@ -6,7 +6,7 @@ from scipy.spatial import KDTree
 def lerp(x, y, t):
 	return x + (y - x) * t
 
-def load(dataset_folder, dataset_name):
+def load(dataset_folder, dataset_name, use_rear_lidar):
 	# 
 	# This will load lidar and odometry data from a RAWSEEDS dataset
 	# We're matching the format of the data the code was originally written for.
@@ -30,13 +30,22 @@ def load(dataset_folder, dataset_name):
 	max_rows = 500000 
 	#max_rows = None
 
+	reference_image = cv2.imread(f'{datafile_prefix}-Drawings_02.png', cv2.IMREAD_COLOR)  # Ground truth image
+
+	if len(reference_image.shape) == 3:
+		reference_image = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
 
 	datafile_prefix = f'{dataset_folder}\\{dataset_name}\\{dataset_name}'
 
 	sick_front_file = f'{datafile_prefix}-SICK_FRONT.csv'
+	sick_rear_file = f'{datafile_prefix}-SICK_REAR.csv'
 	odometry_file = f'{datafile_prefix}-ODOMETRY_XYT.csv'
 	groundtruth_file = f'{datafile_prefix}-GROUNDTRUTH.csv'
 
+	scan_front = np.genfromtxt(sick_front_file, delimiter=',', max_rows=max_rows)
+	scan_rear = np.genfromtxt(sick_rear_file, delimiter=',', max_rows=max_rows)
+	odometry = np.genfromtxt(odometry_file, delimiter=',', max_rows=max_rows)
+	groundtruth = np.genfromtxt(groundtruth_file, delimiter=',', max_rows=max_rows)
 	reference_image = cv2.imread(f'{datafile_prefix}-Drawings_02.png', cv2.IMREAD_COLOR)  # Ground truth image
 
 	if len(reference_image.shape) == 3:
@@ -51,27 +60,32 @@ def load(dataset_folder, dataset_name):
 	positions = groundtruth[:, 1:3]  # Columns 1 and 2: X and Y positions
 
 	# Create KDTree for efficient timestamp matching
-	timestamp_tree = KDTree(timestamps.reshape(-1, 1))
+	ts_tree_groundtruth = KDTree(timestamps.reshape(-1, 1))
+	ts_tree_scan_rear = KDTree(scan_rear[:, 0].reshape(-1, 1))
 
 	# LIDAR data is leading in determining sample count
-	sample_count = scan.shape[0]
+	sample_count = scan_front.shape[0]
 
-	print(f"Scan: {scan.shape}")
+	print(f"Scan front: {scan_front.shape}")
+	print(f"Scan rear: {scan_rear.shape}")
 	print(f"Odo: {odometry.shape}")
 	print(f"Groundtruth: {groundtruth.shape}")
 
 	# Setup data arrays based on desired output format
+	# Rear scan data will be resampled and merged to front scan data
 	# Initialize pose and RPY to zero since they will be filled from odometry data
-	t = scan[:,0].reshape((sample_count, 1, 1))
+	t = scan_front[:,0].reshape((sample_count, 1, 1))
+	scan_front = scan_front[:,3:]
+	scan_rear = scan_rear[:,3:]
+	scan_rear_resampled = np.zeros((sample_count, scan_front.shape[1]))
 	pose = np.zeros((sample_count, 1, 2))
 	rpy = np.zeros((sample_count, 1, 3))
-	scan = scan[:,3:]
-
+ 
 	# Merge position and yaw data to lidar data
 	odo_i = 0
 	odo_n = odometry.shape[0]
 	for i in range(sample_count):
-		desired_ts = scan[i, 0]
+		desired_ts = t[i,0,0]
 
 		# Find between which odo samples this lidar sample falls
 		while True:
@@ -91,6 +105,9 @@ def load(dataset_folder, dataset_name):
 				break
 
 			odo_i += 1
+
+		# Find which rear scan sample to use
+		scan_rear_ts_delta, scan_rear_i = ts_tree_scan_rear.query(desired_ts)
 		
 		# Lerp odomery data based on the found sample range
 		x = lerp(odometry[odo_i, 4], odometry[odo_i + 1, 4], odo_f)
@@ -100,6 +117,12 @@ def load(dataset_folder, dataset_name):
 		pose[i, 0, 0] = x
 		pose[i, 0, 1] = y
 		rpy[i, 0, 2] = heading
+		scan_rear_resampled[i,:] = scan_rear[scan_rear_i,:]
+
+	if use_rear_lidar:
+		scan = np.concatenate([scan_front, scan_rear_resampled], axis=1)
+	else:
+		scan = scan_front
 
 	# Lidar dataset
 	lidar = \

@@ -19,16 +19,17 @@ from skimage.color import rgb2gray
 # ---------------------------------------------------------------------------------------------------------------------#
 # Dataset configuration: Choose between 'original' or 'bicocca'
 dataset = 'bicocca'  # Options: 'original', 'bicocca'
-
+use_rear_lidar = False # Whether to load rear LIDAR data in addition to front (only used in bicocca dataset)
 
 # Rendering and event loop configuration
-render_animated = False  # Whether to render an animated preview while calculating to speed up calculation
-run_event_loop = False  # Whether to run the QT event loop each iteration to speed up calculation
+render_animated = True  # Whether to render an animated preview while calculating. Disable to speed up calculation
+run_event_loop = False  # Whether to run the QT event loop each iteration. Disable to speed up calculation
+render_particles = False # Whether to render all particle positions on the map as well (Only used in render_animated)
 
 # Particle filter configuration
-N, N_threshold = 20, 50  # Number of particles and resampling threshold
-samples_per_iteration = 50  # Number of samples to skip each iteration (for testing)
-iterations_per_frame = 10  # Number of iterations between rendering map frames
+N, N_threshold = 100, 35  # Number of particles and resampling threshold
+samples_per_iteration = 1  # Number of samples to skip each iteration (for testing)
+iterations_per_frame = 50  # Number of iterations between rendering map frames
 
 # Map and particle noise configuration
 noise_sigma = 1e-3 # Noise standard deviation for particles
@@ -67,19 +68,24 @@ if dataset == 'original':
 	# Angle for each sample in LIDAR sweep
 	angles = np.array([np.arange(-135, 135.25, 0.25) * np.pi / 180.0])
 elif dataset == 'bicocca':
-	joint, lid, timestamp_tree, positions, reference_image = ld_rawseeds.load('data', 'Bicocca_2009-02-25b')
+	joint, lid, timestamp_tree, positions = ld_rawseeds.load('data', 'Bicocca_2009-02-25b', use_rear_lidar)
 
 	config = {'scan_min': 0.1,'scan_max': 80}
 	
 	mapfig['res'] = 0.1
-	mapfig['xmin'] = -100
-	mapfig['ymin'] = -100
-	mapfig['xmax'] = 100
-	mapfig['ymax'] = 100
+	mapfig['xmin'] = -150
+	mapfig['ymin'] = -150
+	mapfig['xmax'] = 150
+	mapfig['ymax'] = 150
 	
 	# Angle for each sample in LIDAR sweep
 	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
-	angles = np.linspace(-90, 90, 181) * np.pi / 180.0
+	# SICK rear sensor has 181 samples in the full rear 180 degree range
+	# This means there's probably 2 samples overlapping at +/-90 degrees, which makes the lineair space division slightly incorrect
+	if use_rear_lidar:
+		angles = np.linspace(-90, 270, 362) * np.pi / 180.0
+	else:
+		angles = np.linspace(-90, 90, 181) * np.pi / 180.0
 
 ### Data setup ##
 
@@ -154,6 +160,10 @@ def animate(frame):
 
 	# Update the image drawer
 	updateDisplayMap(mapfig)
+
+	if render_particles:
+		drawParticles(mapfig, scatter, particles)
+
 	im.set_data(mapfig['show_map'])
 
     # Update RMSE plot
@@ -204,6 +214,12 @@ def slam_iteration():
 	delta_x_gb = pose_c[0][0] - pose_p[0][0]
 	delta_y_gb = pose_c[0][1] - pose_p[0][1]
 	delta_theta_gb = yaw_c - yaw_p
+	
+	while delta_theta_gb > np.pi:
+		delta_theta_gb -= np.pi * 2
+	
+	while delta_theta_gb < -np.pi:
+		delta_theta_gb += np.pi * 2
 
 	delta_x_lc = (np.cos(yaw_p) * delta_x_gb) + (np.sin(yaw_p) * delta_y_gb)
 	delta_y_lc = (-np.sin(yaw_p) * delta_x_gb) + (np.cos(yaw_p) * delta_y_gb)
@@ -266,11 +282,7 @@ def slam_iteration():
 	y_r = (np.ceil((particles[ind_best, 1] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
 
 	# Extract SLAM estimate (timestamp, x, y)
-	estimated_timestamp = pose_c[0]
-	estimated_timestamp = estimated_timestamp[0]
-
-	if estimated_timestamp.ndim > 1:
-		estimated_timestamp = estimated_timestamp.flatten()
+	estimated_timestamp = lid_c['t'][0][0]
 
 	est_x, est_y = particles[ind_best, 0], particles[ind_best, 1]
 
@@ -390,6 +402,10 @@ else:
 	updateDisplayMap(mapfig)
 
 im = ax.imshow(mapfig['show_map'])
+
+if render_particles:
+	scatter = ax.scatter([], [], s=0.1)
+
 plt.show()
 
 def calculate_psnr(reference_image, max_pixel_value=255.0):
