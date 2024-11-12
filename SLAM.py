@@ -39,12 +39,10 @@ factor = np.array([1, 1, 10])  # Noise factor for heading (yaw) and position (x,
 x_range = np.array([ -0.05, 0.00, 0.05 ])
 y_range = np.array([ -0.05, 0.00, 0.05 ])
 
-# Number of samples to limit the simulation to (can be None for full dataset)
-sample_limit = None
-
 # ---------------------------------------------------------------------------------------------------------------------#
 ## Script
 # ---------------------------------------------------------------------------------------------------------------------#
+random.seed(0)
 np.random.seed(0)
 
 mapfig = {}
@@ -58,6 +56,7 @@ if dataset == 'original':
 
 	config = {'scan_min': 0.1,'scan_max': 30}
 	start_sample = 0
+	sample_limit = None
 
 	mapfig['res'] = 0.05
 	mapfig['xmin'] = -40
@@ -72,6 +71,7 @@ elif dataset == 'bicocca':
 
 	config = {'scan_min': 0.1,'scan_max': 80}
 	start_sample = 100000
+	sample_limit = 129000
 	
 	mapfig['res'] = 0.2
 	mapfig['xmin'] = -150
