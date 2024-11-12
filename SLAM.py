@@ -21,13 +21,13 @@ use_rear_lidar = False # Whether to load rear LIDAR data in addition to front (o
 
 # Rendering and event loop configuration
 render_animated = True  # Whether to render an animated preview while calculating. Disable to speed up calculation
-run_event_loop = False  # Whether to run the QT event loop each iteration. Disable to speed up calculation
 render_particles = False # Whether to render all particle positions on the map as well (Only used in render_animated)
+samples_per_iteration = 10  # Number of samples to skip each iteration (for testing)
+iterations_per_frame = 50  # Number of iterations between rendering map frames
+event_loop_interval = 10 # Number of SLAM iterations between running the QT event loop. Set to 0 to disable the event loop
 
 # Particle filter configuration
 N, N_threshold = 100, 35  # Number of particles and resampling threshold
-samples_per_iteration = 1  # Number of samples to skip each iteration (for testing)
-iterations_per_frame = 50  # Number of iterations between rendering map frames
 
 # Map and particle noise configuration
 noise_sigma = 1e-3 # Noise standard deviation for particles
@@ -69,9 +69,9 @@ elif dataset == 'bicocca':
 
 	config = {'scan_min': 0.1,'scan_max': 80}
 	
-	mapfig['res'] = 0.1
-	mapfig['xmin'] = -150
-	mapfig['ymin'] = -150
+	mapfig['res'] = 0.2
+	mapfig['xmin'] = -25
+	mapfig['ymin'] = -25
 	mapfig['xmax'] = 150
 	mapfig['ymax'] = 150
 	
@@ -146,14 +146,14 @@ sample = 1
 # Function that calls the simulation in animate preview
 def animate(frame):
 	# Perform a number of iterations before we draw the frame
-	next_frame = sample + iterations_per_frame * samples_per_iteration
-	while sample < next_frame and sample < timeline:
+	iterations_this_frame = 0
+	while iterations_this_frame < iterations_per_frame and sample < timeline:
 		slam_iteration()
-		if rmse_values:
-			average_rmse = np.mean(rmse_values)
-			
-		if run_event_loop:
+
+		if event_loop_interval > 0 and iterations_this_frame % event_loop_interval == 0:
 			plt.pause(0.001) # pause interval (This makes rendering a bit slower, but keeps the GUI responsive)
+
+		iterations_this_frame += 1
 
 	# Update the image drawer
 	updateDisplayMap(mapfig)
@@ -366,5 +366,5 @@ if render_particles:
 plt.show()
 
 if rmse_values:
-    final_rmse = np.mean(rmse_values)
+    final_rmse = np.sqrt(np.mean(rmse_values))
     print(f"Final RMSE between estimated position and ground truth: {final_rmse:.4f} meters")
