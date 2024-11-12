@@ -18,14 +18,14 @@ import time
 # Dataset configuration: Choose between 'original' or 'bicocca'
 dataset = 'bicocca'  # Options: 'original', 'bicocca'
 
-
 # Rendering and event loop configuration
-render_animated = False  # Whether to render an animated preview while calculating to speed up calculation
-run_event_loop = False  # Whether to run the QT event loop each iteration to speed up calculation
+render_animated = True  # Whether to render an animated preview while calculating. Disable to speed up calculation
+run_event_loop = True  # Whether to run the QT event loop each iteration. Disable to speed up calculation
+render_particles = True # Whether to render all particle positions on the map as well (Only used in render_animated)
 
 # Particle filter configuration
-N, N_threshold = 200, 35  # Number of particles and resampling threshold
-samples_per_iteration = 1000  # Number of samples to skip each iteration (for testing)
+N, N_threshold = 100, 35  # Number of particles and resampling threshold
+samples_per_iteration = 1  # Number of samples to skip each iteration (for testing)
 iterations_per_frame = 50  # Number of iterations between rendering map frames
 
 # Map and particle noise configuration
