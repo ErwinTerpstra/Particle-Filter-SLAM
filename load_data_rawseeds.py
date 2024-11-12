@@ -1,10 +1,6 @@
 import numpy as np
 from scipy.spatial import KDTree
 
-
-def lerp(x, y, t):
-	return x + (y - x) * t
-
 def load(dataset_folder, dataset_name, use_rear_lidar):
 	# 
 	# This will load lidar and odometry data from a RAWSEEDS dataset
@@ -68,8 +64,6 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 	rpy = np.zeros((sample_count, 1, 3))
  
 	# Merge position and yaw data to lidar data
-	odo_i = 0
-	odo_n = odometry.shape[0]
 	for i in range(sample_count):
 		desired_ts = t[i,0,0]
 
@@ -79,14 +73,10 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 		# Find which odometry sample to use
 		odometry_ts_delta, odometry_i = ts_tree_odometry.query(desired_ts)
 		
-		# Lerp odomery data based on the found sample range
-		#x = lerp(odometry[odo_i, 4], odometry[odo_i + 1, 4], odo_f)
-		#y = lerp(odometry[odo_i, 5], odometry[odo_i + 1, 5], odo_f)
-		#heading = lerp(odometry[odo_i, 6], odometry[odo_i + 1, 6], odo_f)
-	
-		pose[i, 0, 0] = odometry[odo_i, 4]
-		pose[i, 0, 1] = odometry[odo_i, 5]
-		rpy[i, 0, 2] = odometry[odo_i, 6]
+		# Place data in correct data lists
+		pose[i, 0, 0] = odometry[odometry_i, 4]
+		pose[i, 0, 1] = odometry[odometry_i, 5]
+		rpy[i, 0, 2] = odometry[odometry_i, 6]
 		scan_rear_resampled[i,:] = scan_rear[scan_rear_i,:]
 
 	if use_rear_lidar:

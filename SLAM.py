@@ -345,7 +345,7 @@ def slam_iteration():
 	# Print timing stats
 	if time.time() - last_print >= 0.5:
 		elapsed_time = time.perf_counter_ns() - start_time
-		elapsed_iterations = sample / float(samples_per_iteration)
+		elapsed_iterations = (sample - start_sample) / float(samples_per_iteration)
 		nfactor = 1 / (1000000 * float(elapsed_iterations))
 
 		print("{0}/{1}".format(sample, timeline))
