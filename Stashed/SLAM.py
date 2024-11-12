@@ -12,7 +12,6 @@ import random
 import time
 from skimage.metrics import structural_similarity as ssim
 from skimage.transform import resize
-from skimage.color import rgb2gray
 
 # ---------------------------------------------------------------------------------------------------------------------#
 ## Hyper parameters
@@ -26,9 +25,9 @@ render_animated = False  # Whether to render an animated preview while calculati
 run_event_loop = False  # Whether to run the QT event loop each iteration to speed up calculation
 
 # Particle filter configuration
-N, N_threshold = 20, 50  # Number of particles and resampling threshold
+N, N_threshold = 200, 50  # Number of particles and resampling threshold
 samples_per_iteration = 50  # Number of samples to skip each iteration (for testing)
-iterations_per_frame = 10  # Number of iterations between rendering map frames
+iterations_per_frame = 50  # Number of iterations between rendering map frames
 
 # Map and particle noise configuration
 noise_sigma = 1e-3 # Noise standard deviation for particles
@@ -49,8 +48,6 @@ sample_limit = None
 mapfig = {}
 
 rmse_values = []
-rmse_plot_values = []
-current_avg_rmse = 0.0
 
 if dataset == 'original':
 	joint = ld_original.get_joint("data/Original/train_joint2")
@@ -155,24 +152,7 @@ def animate(frame):
 	# Update the image drawer
 	updateDisplayMap(mapfig)
 	im.set_data(mapfig['show_map'])
-
-    # Update RMSE plot
-	update_rmse_plot()
-	
-	return im, rmse_line
-
-def update_rmse_plot():
-	# Update the line with new x and y data
-	line_rmse.set_data(x_data, y_data)
-	
-	# Adjust x-axis limits dynamically if needed
-	if len(x_data) > timeline:
-		ax_rmse.set_xlim(0, len(x_data))
-	
-	# Redraw the figure
-	fig_rmse.canvas.draw()
-	fig_rmse.canvas.flush_events()
-
+	return im
 
 # Perform a single SLAM iteration. Moves the sample counter forward by a number of samples
 def slam_iteration():
@@ -280,18 +260,9 @@ def slam_iteration():
 
     # Calculate RMSE for the current sample
 	error = (true_x - est_x) ** 2 + (true_y - est_y) ** 2
-
 	rmse_values.append(error)
-
 	if rmse_values:
 		current_avg_rmse = np.sqrt(np.mean(rmse_values))
-		rmse_plot_values.append(current_avg_rmse)
-
-    # After calculating the current RMSE value
-	x_data.append(sample)              # Add the current iteration to x data
-	y_data.append(current_avg_rmse)    # Add current average RMSE to y data
-    
-	update_rmse_plot()                 # Update the RMSE plot after each iteration
 
 	# Mark location with a red pixel (index 0 in RGB)
 	mapfig['show_map'][x_r, y_r,:] = [ 255, 0, 0]
@@ -341,9 +312,6 @@ def slam_iteration():
 
 	sample += samples_per_iteration
 
-
-
-
 	# Print timing stats
 	if time.time() - last_print >= 0.5:
 		elapsed_time = time.perf_counter_ns() - start_time
@@ -366,18 +334,6 @@ fig = plt.figure(1)
 ax = fig.add_subplot(1, 1, 1)
 ax.set_title("SLAM Map")
 
-x_data = []
-y_data = []
-
-fig_rmse, ax_rmse = plt.subplots()
-ax_rmse.set_title("Real-Time RMSE Plot")
-ax_rmse.set_xlabel("Iteration")
-ax_rmse.set_ylabel("RMSE (meters)")
-ax_rmse.set_xlim(0, timeline)
-ax_rmse.set_ylim(0, 80)  # Set y-axis limit from 0 to 100
-line_rmse, = ax_rmse.plot([], [], label="RMSE", color="blue")
-rmse_values = []
-
 if render_animated:
 	# Setup the animation
 	frame_count = int(np.ceil((timeline - 1) / samples_per_iteration / iterations_per_frame))
@@ -387,39 +343,63 @@ else:
 	while sample <  timeline:
 		slam_iteration()
 
+<<<<<<< Updated upstream
 	updateDisplayMap(mapfig)
+
+im = ax.imshow(mapfig['show_map'])
+=======
+# Save the generated map
+def save_map_image():
+    map_image = mapfig['show_map']    
+    cv2.imwrite("generated_map.png", map_image)
+>>>>>>> Stashed changes
+
+# Ensure map is saved before loading it
+save_map_image()
+
+# Try to load the generated image
+generated_image = cv2.imread('generated_map.png', cv2.IMREAD_COLOR)  # SLAM generated map/image
+
+# Verify the generated image loaded correctly before evaluating SSIM
+if generated_image is None:
+    raise FileNotFoundError("Failed to load generated_map.png. Check if the file was saved correctly.")
+
+
+def evaluate_ssim(reference_image, generated_image):
+    # Convert images to grayscale if they have multiple channels
+    if len(reference_image.shape) == 3:
+        reference_image = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
+    if len(generated_image.shape) == 3:
+        generated_image = cv2.cvtColor(generated_image, cv2.COLOR_BGR2GRAY)
+    
+    # Ensure images are the same shape
+    if reference_image.shape != generated_image.shape:
+        generated_image_resized = resize(generated_image, reference_image.shape, mode='reflect', anti_aliasing=True)
+    else:
+        generated_image_resized = generated_image
+    
+    # Normalize images to [0, 1] range
+    reference_image = reference_image / 255.0
+    generated_image_resized = generated_image_resized / 255.0
+
+    # Check for NaN or Inf in the images
+    if np.isnan(reference_image).any() or np.isnan(generated_image_resized).any():
+        print("NaN values found in one of the images.")
+    if np.isinf(reference_image).any() or np.isinf(generated_image_resized).any():
+        print("Infinity values found in one of the images.")
+
+    # Compute SSIM with a data range of 1.0 (for normalized images)
+    ssim_score, _ = ssim(reference_image, generated_image_resized, full=True, data_range=1.0)
+    return ssim_score
+
+# SSIM score
+ssim_value = evaluate_ssim(reference_image, generated_image)
+print(f"SSIM between the reference and generated images: {ssim_value}")
+
 
 im = ax.imshow(mapfig['show_map'])
 plt.show()
 
-def calculate_psnr(reference_image, max_pixel_value=255.0):
-	# Use mapfig['show_map'] as the generated image
-	generated_image = mapfig['show_map']
-	
-# Convert generated image to grayscale if needed
-	if len(generated_image.shape) == 3:  # Check if RGB
-		generated_image = rgb2gray(generated_image)
-		generated_image = (generated_image * 255).astype(reference_image.dtype)  # Scale back to the 0-255 range
-
-
-	# Ensure images are the same shape
-	if reference_image.shape != generated_image.shape:
-		generated_image_resized = resize(generated_image, reference_image.shape, mode='reflect', anti_aliasing=True)
-	else:
-		generated_image_resized = generated_image
-	
-	# Compute MSE
-	mse_value = np.mean((reference_image - generated_image_resized) ** 2)
-	if mse_value == 0:
-		return float('inf')  # Identical images would result in infinite PSNR
-	
-	# Compute PSNR
-	psnr_value = 20 * np.log10(max_pixel_value / np.sqrt(mse_value))
-	return psnr_value
-
-psnr_value = calculate_psnr(reference_image, max_pixel_value=255)
-
 if rmse_values:
-    final_rmse = np.sqrt(np.mean(rmse_values))
+    final_rmse = np.mean(rmse_values)
     print(f"Final RMSE between estimated position and ground truth: {final_rmse:.4f} meters")
-    print("PSNR value", psnr_value)
