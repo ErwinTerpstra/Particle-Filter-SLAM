@@ -10,7 +10,8 @@ from scipy.spatial import KDTree
 import cv2
 import random
 import time
-
+from skimage.metrics import structural_similarity as ssim
+from skimage.transform import resize
 
 # ---------------------------------------------------------------------------------------------------------------------#
 ## Hyper parameters
@@ -24,8 +25,8 @@ render_animated = False  # Whether to render an animated preview while calculati
 run_event_loop = False  # Whether to run the QT event loop each iteration to speed up calculation
 
 # Particle filter configuration
-N, N_threshold = 200, 35  # Number of particles and resampling threshold
-samples_per_iteration = 1000  # Number of samples to skip each iteration (for testing)
+N, N_threshold = 200, 50  # Number of particles and resampling threshold
+samples_per_iteration = 50  # Number of samples to skip each iteration (for testing)
 iterations_per_frame = 50  # Number of iterations between rendering map frames
 
 # Map and particle noise configuration
@@ -63,7 +64,7 @@ if dataset == 'original':
 	# Angle for each sample in LIDAR sweep
 	angles = np.array([np.arange(-135, 135.25, 0.25) * np.pi / 180.0])
 elif dataset == 'bicocca':
-	joint, lid, timestamp_tree, positions = ld_rawseeds.load('data', 'Bicocca_2009-02-25b')
+	joint, lid, timestamp_tree, positions, reference_image = ld_rawseeds.load('data', 'Bicocca_2009-02-25b')
 
 	config = {'scan_min': 0.1,'scan_max': 80}
 	
@@ -345,7 +346,6 @@ else:
 	updateDisplayMap(mapfig)
 
 im = ax.imshow(mapfig['show_map'])
-
 plt.show()
 
 if rmse_values:

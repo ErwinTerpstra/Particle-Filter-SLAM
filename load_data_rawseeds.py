@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 from scipy.spatial import KDTree
 
 
@@ -31,9 +32,15 @@ def load(dataset_folder, dataset_name):
 
 
 	datafile_prefix = f'{dataset_folder}\\{dataset_name}\\{dataset_name}'
+
 	sick_front_file = f'{datafile_prefix}-SICK_FRONT.csv'
 	odometry_file = f'{datafile_prefix}-ODOMETRY_XYT.csv'
 	groundtruth_file = f'{datafile_prefix}-GROUNDTRUTH.csv'
+
+	reference_image = cv2.imread(f'{datafile_prefix}-Drawings_02.png', cv2.IMREAD_COLOR)  # Ground truth image
+
+	if len(reference_image.shape) == 3:
+		reference_image = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
 
 	scan = np.genfromtxt(sick_front_file, delimiter=',', max_rows=max_rows)
 	odometry = np.genfromtxt(odometry_file, delimiter=',')
@@ -117,4 +124,4 @@ def load(dataset_folder, dataset_name):
 		'head_angles': np.zeros((2, sample_count))
 	}
 
-	return joints, lidar, timestamp_tree, positions
+	return joints, lidar, timestamp_tree, positions, reference_image
