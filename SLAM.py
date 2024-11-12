@@ -258,11 +258,7 @@ def slam_iteration():
 	y_r = (np.ceil((particles[ind_best, 1] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
 
 	# Extract SLAM estimate (timestamp, x, y)
-	estimated_timestamp = pose_c[0]
-	estimated_timestamp = estimated_timestamp[0]
-
-	if estimated_timestamp.ndim > 1:
-		estimated_timestamp = estimated_timestamp.flatten()
+	estimated_timestamp = lid_c['t'][0][0]
 
 	est_x, est_y = particles[ind_best, 0], particles[ind_best, 1]
 
