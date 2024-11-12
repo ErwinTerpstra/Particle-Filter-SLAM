@@ -258,10 +258,10 @@ def slam_iteration():
 	true_x, true_y = positions[index]  # Ground truth x, y coordinates
 
     # Calculate RMSE for the current sample
-	rmse = np.sqrt((true_x - est_x) ** 2 + (true_y - est_y) ** 2)
-	rmse_values.append(rmse)
+	error = (true_x - est_x) ** 2 + (true_y - est_y) ** 2
+	rmse_values.append(error)
 	if rmse_values:
-		current_avg_rmse = np.mean(rmse_values)
+		current_avg_rmse = np.sqrt(np.mean(rmse_values))
 
 	# Mark location with a red pixel (index 0 in RGB)
 	mapfig['show_map'][x_r, y_r,:] = [ 255, 0, 0]
