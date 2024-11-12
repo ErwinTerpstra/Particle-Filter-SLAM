@@ -17,11 +17,12 @@ import time
 # ---------------------------------------------------------------------------------------------------------------------#
 # Dataset configuration: Choose between 'original' or 'bicocca'
 dataset = 'bicocca'  # Options: 'original', 'bicocca'
+use_rear_lidar = False # Whether to load rear LIDAR data in addition to front (only used in bicocca dataset)
 
 # Rendering and event loop configuration
 render_animated = True  # Whether to render an animated preview while calculating. Disable to speed up calculation
-run_event_loop = True  # Whether to run the QT event loop each iteration. Disable to speed up calculation
-render_particles = True # Whether to render all particle positions on the map as well (Only used in render_animated)
+run_event_loop = False  # Whether to run the QT event loop each iteration. Disable to speed up calculation
+render_particles = False # Whether to render all particle positions on the map as well (Only used in render_animated)
 
 # Particle filter configuration
 N, N_threshold = 100, 35  # Number of particles and resampling threshold
@@ -63,7 +64,7 @@ if dataset == 'original':
 	# Angle for each sample in LIDAR sweep
 	angles = np.array([np.arange(-135, 135.25, 0.25) * np.pi / 180.0])
 elif dataset == 'bicocca':
-	joint, lid, timestamp_tree, positions = ld_rawseeds.load('data', 'Bicocca_2009-02-25b')
+	joint, lid, timestamp_tree, positions = ld_rawseeds.load('data', 'Bicocca_2009-02-25b', use_rear_lidar)
 
 	config = {'scan_min': 0.1,'scan_max': 80}
 	
@@ -77,7 +78,10 @@ elif dataset == 'bicocca':
 	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
 	# SICK rear sensor has 181 samples in the full rear 180 degree range
 	# This means there's probably 2 samples overlapping at +/-90 degrees, which makes the lineair space division slightly incorrect
-	angles = np.linspace(-90, 270, 362) * np.pi / 180.0
+	if use_rear_lidar:
+		angles = np.linspace(-90, 270, 362) * np.pi / 180.0
+	else:
+		angles = np.linspace(-90, 90, 181) * np.pi / 180.0
 
 ### Data setup ##
 
@@ -354,7 +358,9 @@ else:
 	updateDisplayMap(mapfig)
 
 im = ax.imshow(mapfig['show_map'])
-scatter = ax.scatter([], [], s=0.1)
+
+if render_particles:
+	scatter = ax.scatter([], [], s=0.1)
 
 plt.show()
 

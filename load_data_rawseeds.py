@@ -5,7 +5,7 @@ from scipy.spatial import KDTree
 def lerp(x, y, t):
 	return x + (y - x) * t
 
-def load(dataset_folder, dataset_name):
+def load(dataset_folder, dataset_name, use_rear_lidar):
 	# 
 	# This will load lidar and odometry data from a RAWSEEDS dataset
 	# We're matching the format of the data the code was originally written for.
@@ -105,6 +105,11 @@ def load(dataset_folder, dataset_name):
 		rpy[i, 0, 2] = heading
 		scan_rear_resampled[i,:] = scan_rear[scan_rear_i,:]
 
+	if use_rear_lidar:
+		scan = np.concatenate([scan_front, scan_rear_resampled], axis=1)
+	else:
+		scan = scan_front
+
 	# Lidar dataset
 	lidar = \
 	[
@@ -112,7 +117,7 @@ def load(dataset_folder, dataset_name):
 			't': t[i,:,:],
 			'pose': pose[i,:,:],
 			'rpy': rpy[i,:,:],
-			'scan': np.concatenate([scan_front[i,:], scan_rear_resampled[i,:]])
+			'scan': scan[i,:]
 		} 
 		for i in range(sample_count) 
 	]
