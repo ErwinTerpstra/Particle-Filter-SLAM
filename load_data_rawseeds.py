@@ -26,8 +26,7 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 	#
 
 	# Limit number of rows for quicker testing
-	max_rows = 50000 
-	#max_rows = None
+	max_rows = None
 
 
 	datafile_prefix = f'{dataset_folder}\\{dataset_name}\\{dataset_name}'
@@ -48,6 +47,7 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 	# Create KDTree for efficient timestamp matching
 	ts_tree_groundtruth = KDTree(timestamps.reshape(-1, 1))
 	ts_tree_scan_rear = KDTree(scan_rear[:, 0].reshape(-1, 1))
+	ts_tree_odometry = KDTree(odometry[:, 0].reshape(-1, 1))
 
 	# LIDAR data is leading in determining sample count
 	sample_count = scan_front.shape[0]
@@ -73,36 +73,20 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 	for i in range(sample_count):
 		desired_ts = t[i,0,0]
 
-		# Find between which odo samples this lidar sample falls
-		while True:
-			prev_ts = odometry[odo_i, 0]
-			next_ts = odometry[odo_i + 1, 0]
-
-			if desired_ts <= prev_ts:
-				odo_f = 0
-				break
-
-			if desired_ts <= next_ts:
-				odo_f = (desired_ts - prev_ts) / float(next_ts - prev_ts)
-				break
-
-			if odo_i == odo_n - 1:
-				odo_f = 1
-				break
-
-			odo_i += 1
-
 		# Find which rear scan sample to use
 		scan_rear_ts_delta, scan_rear_i = ts_tree_scan_rear.query(desired_ts)
+
+		# Find which odometry sample to use
+		odometry_ts_delta, odometry_i = ts_tree_odometry.query(desired_ts)
 		
 		# Lerp odomery data based on the found sample range
-		x = lerp(odometry[odo_i, 4], odometry[odo_i + 1, 4], odo_f)
-		y = lerp(odometry[odo_i, 5], odometry[odo_i + 1, 5], odo_f)
-		heading = lerp(odometry[odo_i, 6], odometry[odo_i + 1, 6], odo_f)
+		#x = lerp(odometry[odo_i, 4], odometry[odo_i + 1, 4], odo_f)
+		#y = lerp(odometry[odo_i, 5], odometry[odo_i + 1, 5], odo_f)
+		#heading = lerp(odometry[odo_i, 6], odometry[odo_i + 1, 6], odo_f)
 	
-		pose[i, 0, 0] = x
-		pose[i, 0, 1] = y
-		rpy[i, 0, 2] = heading
+		pose[i, 0, 0] = odometry[odo_i, 4]
+		pose[i, 0, 1] = odometry[odo_i, 5]
+		rpy[i, 0, 2] = odometry[odo_i, 6]
 		scan_rear_resampled[i,:] = scan_rear[scan_rear_i,:]
 
 	if use_rear_lidar:

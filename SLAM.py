@@ -22,7 +22,8 @@ use_rear_lidar = False # Whether to load rear LIDAR data in addition to front (o
 # Rendering and event loop configuration
 render_animated = True  # Whether to render an animated preview while calculating. Disable to speed up calculation
 render_particles = False # Whether to render all particle positions on the map as well (Only used in render_animated)
-samples_per_iteration = 10  # Number of samples to skip each iteration (for testing)
+render_groundtruth = True # Whether to render a line for ground truth
+samples_per_iteration = 1  # Number of samples to skip each iteration (for testing)
 iterations_per_frame = 50  # Number of iterations between rendering map frames
 event_loop_interval = 10 # Number of SLAM iterations between running the QT event loop. Set to 0 to disable the event loop
 
@@ -50,11 +51,13 @@ mapfig = {}
 
 rmse_values = []
 
+print(f'Loading dataset "{dataset}"...')
 if dataset == 'original':
 	joint = ld_original.get_joint("data/Original/train_joint2")
 	lid = ld_original.get_lidar("data/Original/train_lidar2")
 
 	config = {'scan_min': 0.1,'scan_max': 30}
+	start_sample = 0
 
 	mapfig['res'] = 0.05
 	mapfig['xmin'] = -40
@@ -68,10 +71,11 @@ elif dataset == 'bicocca':
 	joint, lid, timestamp_tree, positions = ld_rawseeds.load('data', 'Bicocca_2009-02-25b', use_rear_lidar)
 
 	config = {'scan_min': 0.1,'scan_max': 80}
+	start_sample = 100000
 	
 	mapfig['res'] = 0.2
-	mapfig['xmin'] = -25
-	mapfig['ymin'] = -25
+	mapfig['xmin'] = -150
+	mapfig['ymin'] = -150
 	mapfig['xmax'] = 150
 	mapfig['ymax'] = 150
 	
@@ -120,14 +124,19 @@ h_angle = joint['head_angles']
 rpy_robot = joint['rpy']
 
 # Draw initial map for first dataset sample
-lid_p = lid[0]
+lid_p = lid[start_sample]
 rpy_p = lid_p['rpy']
 
-ind_0 = np.argmin(np.absolute(ts - lid_p['t'][0][0])) # Index of closest timestamp match between datasets
+ts_start = lid_p['t'][0][0]
+ind_0 = np.argmin(np.absolute(ts - ts_start)) # Index of closest timestamp match between datasets
 pos_phy, posX_map, posY_map = mapConvert(lid_p['scan'], rpy_robot[:, ind_0], h_angle[:, ind_0], angles, particles, N, pos_phy, posX_map, posY_map, mapfig, config)
 mapfig = drawMap(particles[0, :], posX_map[0], posY_map[0], mapfig)
 
 pose_p, yaw_p = lid_p['pose'], rpy_p[0, 2]
+
+# Get ground truth for first sample
+distance, index = timestamp_tree.query(ts_start)
+ground_truth_offset = positions[index]
 
 # Time keeping
 start_time = time.perf_counter_ns()
@@ -141,7 +150,7 @@ update_weights_time = 0
 
 # Loop over all samples in dataset
 timeline = min(sample_limit, len(lid)) if sample_limit else len(lid)
-sample = 1
+sample = start_sample + 1
 
 # Function that calls the simulation in animate preview
 def animate(frame):
@@ -260,7 +269,7 @@ def slam_iteration():
 
 	# Convert location of best particle to map coordinates
 	x_r = (np.ceil((particles[ind_best, 0] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
-	y_r = (np.ceil((particles[ind_best, 1] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
+	y_r = (np.ceil((particles[ind_best, 1] - mapfig['ymin']) / mapfig['res']).astype(np.int16) - 1)
 
 	# Extract SLAM estimate (timestamp, x, y)
 	estimated_timestamp = lid_c['t'][0][0]
@@ -269,8 +278,8 @@ def slam_iteration():
 
     # Find the closest ground truth position using KDTree
 	distance, index = timestamp_tree.query(estimated_timestamp)
-	true_x, true_y = positions[index]  # Ground truth x, y coordinates
-
+	true_x, true_y = positions[index] - ground_truth_offset  # Ground truth x, y coordinates
+	
     # Calculate RMSE for the current sample
 	error = (true_x - est_x) ** 2 + (true_y - est_y) ** 2
 	rmse_values.append(error)
@@ -279,6 +288,14 @@ def slam_iteration():
 
 	# Mark location with a red pixel (index 0 in RGB)
 	mapfig['show_map'][x_r, y_r,:] = [ 255, 0, 0]
+	
+	if render_groundtruth:
+		# Convert ground truth location to map coordinates
+		x_t = (np.ceil((true_x - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
+		y_t = (np.ceil((true_y - mapfig['ymin']) / mapfig['res']).astype(np.int16) - 1)
+
+		# Mark location with a blue pixel (index 2 in RGB)
+		mapfig['show_map'][x_t, y_t,:] = [ 0, 0, 255]
 
 	# Draw map 
 	# TODO: Why is best particle passed here? What is the difference between particles array and posX_map/posY_Map
