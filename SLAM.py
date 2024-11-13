@@ -40,8 +40,8 @@ factor = np.array([1, 1, 10])  # Noise factor for heading (yaw) and position (x,
 
 # These offsets are used to evaluate map correlation at various offsets of the particle's actual position
 # Current settings considers a 3x3 grid for each particle
-# Set both range and resolution to zero to disable
-local_search_range = 0.05	# The maximum range for local search
+# Set both offset and resolution to zero to disable
+local_search_offset = 0.05	# The step size for local search. Should in practice usually match the map resolution
 local_search_resolution = 1 # The amount of grid cells to look for in each direction. A value of "1" results in a  
 							# 3x3 grid. A value of "2" in a 5x5 grid, "3" results in a 7x7 grid, etc.
 
@@ -49,7 +49,7 @@ local_search_resolution = 1 # The amount of grid cells to look for in each direc
 if disable_particle_filtering:
 	N = 1
 	noise_sigma = 0
-	local_search_range = 0
+	local_search_offset = 0
 	local_search_resolution = 0
 
 # ---------------------------------------------------------------------------------------------------------------------#
@@ -70,8 +70,10 @@ if len(sys.argv) > 1:
 	N_threshold = N // 3
 
 	noise_sigma = experiment.get('noise_sigma', noise_sigma)
-	local_search_range = experiment.get('local_search_range', local_search_range)
+	local_search_offset = experiment.get('local_search_offset', local_search_offset)
 	local_search_resolution = experiment.get('local_search_resolution', local_search_resolution)
+	local_search_resolution = experiment.get('local_search_resolution', local_search_resolution)
+	use_rear_lidar = experiment.get('use_rear_lidar', use_rear_lidar)
 
 	# Disable animation for experiments
 	render_animated = False
@@ -81,8 +83,9 @@ if len(sys.argv) > 1:
 	print(f'Writing experiment output to {experiment_output}*')
 	print(f'Particle count: {N}')
 	print(f'Noise sigma: {noise_sigma}')
-	print(f'Local search range: {local_search_range}')
+	print(f'Local search offset: {local_search_offset}')
 	print(f'Local search resolution: {local_search_resolution}')
+	print(f'Use rear lidar: {use_rear_lidar}')
 	print('')
 else:
 	experiment_output = None
@@ -122,7 +125,7 @@ elif dataset == 'bicocca':
 	start_sample = 99580 # Gives about ~4700 samples of ground truth data
 	sample_limit = 104640
 	
-	mapfig['res'] = 0.2
+	mapfig['res'] = 0.05
 	mapfig['xmin'] = -45
 	mapfig['ymin'] = -60
 	mapfig['xmax'] = 45
@@ -146,6 +149,7 @@ particles = np.zeros((N, 3))
 weight = np.ones((N, 1)) * (1.0 / N)
 
 # Calculate positions for the local search grid
+local_search_range = local_search_resolution * local_search_resolution
 local_search_grid_size = 2 * local_search_resolution + 1
 x_range = np.linspace(-local_search_range, local_search_range, local_search_grid_size)
 y_range = np.linspace(-local_search_range, local_search_range, local_search_grid_size)
@@ -425,7 +429,7 @@ def update_plots():
 	ax2.set_ylim(ymax=max(rmse_values) * 1.1)
 
 # Setup output
-fig = plt.figure(1, figsize=(10, 5))
+fig = plt.figure(1, figsize=(20, 10))
 
 ax1 = fig.add_subplot(1, 2, 1)
 ax1.set_title("SLAM Map")
@@ -466,19 +470,18 @@ if experiment_output is not None:
 	plt.savefig(experiment_output + '_map.png')
 
 	# Save stats
-	output = ''
-	output += f'dataset = {dataset}\n'
-	output += f'particle_count = {N}\n'
-	output += f'noise_sigma = {noise_sigma}\n'
-	output += f'local_search_range = {local_search_range}\n'
-	output += f'local_search_resolution = {local_search_resolution}\n'
-	output += '\n'
+	output = { }
+	output['dataset'] = dataset
+	output['particle_count'] = N
+	output['noise_sigma'] = noise_sigma
+	output['local_search_offset'] = local_search_offset
+	output['local_search_resolution'] = local_search_resolution
+	output['use_rear_lidar'] = use_rear_lidar
+	output['runtime'] = total_time
+	output['rmse'] = rmse_values[-1]
 
-	output += f'runtime = {total_time:.3f}s\n'
-	output += f'rmse = {rmse_values[-1]:.3f}m\n'
-
-	with open(experiment_output + '_stats.txt', 'w') as f:
-		f.write(output)
+	with open(experiment_output + '_stats.json', 'w') as f:
+		json.dump(output, f, indent=1)
 
 	print('Experiment finished!')
 else:
