@@ -29,6 +29,7 @@ event_loop_interval = 10 # Number of SLAM iterations between running the QT even
 
 # Particle filter configuration
 N, N_threshold = 100, 35  # Number of particles and resampling threshold
+disable_particle_filtering = True # Set to true to disable particle filtering. In this case, localization is purely from odometry data
 
 # Map and particle noise configuration
 noise_sigma = 1e-3 # Noise standard deviation for particles
@@ -38,6 +39,12 @@ factor = np.array([1, 1, 10])  # Noise factor for heading (yaw) and position (x,
 # Current settings considers a 3x3 grid for each particle
 x_range = np.array([ -0.05, 0.00, 0.05 ])
 y_range = np.array([ -0.05, 0.00, 0.05 ])
+
+# Override settings if particle filtering should be disabled
+if disable_particle_filtering:
+	N = 1
+	noise_sigma = 0
+	x_range = y_range= np.zeros(1)
 
 # ---------------------------------------------------------------------------------------------------------------------#
 ## Script
@@ -67,17 +74,17 @@ if dataset == 'original':
 	# Angle for each sample in LIDAR sweep
 	angles = np.array([np.arange(-135, 135.25, 0.25) * np.pi / 180.0])
 elif dataset == 'bicocca':
-	joint, lid, timestamp_tree, positions = ld_rawseeds.load('data', 'Bicocca_2009-02-25b', use_rear_lidar)
+	joint, lid, timestamp_tree, groundtruth = ld_rawseeds.load('data', 'Bicocca_2009-02-25b', use_rear_lidar)
 
 	config = {'scan_min': 0.1,'scan_max': 80}
-	start_sample = 100000
-	sample_limit = 129000
+	start_sample = 99580 # Gives about ~4700 samples of ground truth data
+	sample_limit = 104640
 	
 	mapfig['res'] = 0.2
-	mapfig['xmin'] = -150
-	mapfig['ymin'] = -150
-	mapfig['xmax'] = 150
-	mapfig['ymax'] = 150
+	mapfig['xmin'] = -80
+	mapfig['ymin'] = -80
+	mapfig['xmax'] = 80
+	mapfig['ymax'] = 80
 	
 	# Angle for each sample in LIDAR sweep
 	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
@@ -136,7 +143,9 @@ pose_p, yaw_p = lid_p['pose'], rpy_p[0, 2]
 
 # Get ground truth for first sample
 distance, index = timestamp_tree.query(ts_start)
-ground_truth_offset = positions[index]
+ground_truth_offset = groundtruth[index, 0:2]
+ground_truth_heading = groundtruth[index, 2]
+ground_truth_rotation = -np.array([[np.cos(ground_truth_heading), -np.sin(ground_truth_heading)], [np.sin(ground_truth_heading), np.cos(ground_truth_heading)]])
 
 # Time keeping
 start_time = time.perf_counter_ns()
@@ -278,10 +287,12 @@ def slam_iteration():
 
     # Find the closest ground truth position using KDTree
 	distance, index = timestamp_tree.query(estimated_timestamp)
-	true_x, true_y = positions[index] - ground_truth_offset  # Ground truth x, y coordinates
+	true_position = groundtruth[index, 0:2] - ground_truth_offset  # Ground truth x, y coordinates
+
+	true_position = np.matmul(ground_truth_rotation, true_position)
 	
     # Calculate RMSE for the current sample
-	error = (true_x - est_x) ** 2 + (true_y - est_y) ** 2
+	error = (true_position[0] - est_x) ** 2 + (true_position[1] - est_y) ** 2
 	rmse_values.append(error)
 	if rmse_values:
 		current_avg_rmse = np.sqrt(np.mean(rmse_values))
@@ -291,8 +302,8 @@ def slam_iteration():
 	
 	if render_groundtruth:
 		# Convert ground truth location to map coordinates
-		x_t = (np.ceil((true_x - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
-		y_t = (np.ceil((true_y - mapfig['ymin']) / mapfig['res']).astype(np.int16) - 1)
+		x_t = (np.ceil((true_position[0] - mapfig['xmin']) / mapfig['res']).astype(np.int16) - 1)
+		y_t = (np.ceil((true_position[1] - mapfig['ymin']) / mapfig['res']).astype(np.int16) - 1)
 
 		# Mark location with a blue pixel (index 2 in RGB)
 		mapfig['show_map'][x_t, y_t,:] = [ 0, 0, 255]

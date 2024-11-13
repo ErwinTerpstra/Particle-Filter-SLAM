@@ -44,20 +44,7 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 		print(f'Loading {sick_rear_file}...')
 		scan_rear = np.genfromtxt(sick_rear_file, delimiter=',', max_rows=max_rows)
 
-	# Extract timestamps and positions for KDTree matching
-	timestamps = groundtruth[:, 0]  # First column: Timestamps
-	positions = groundtruth[:, 1:3]  # Columns 1 and 2: X and Y positions
-
-	# Create KDTree for efficient timestamp matching
-	ts_tree_groundtruth = KDTree(timestamps.reshape(-1, 1))
-	ts_tree_odometry = KDTree(odometry[:, 0].reshape(-1, 1))
-	
-	if use_rear_lidar:
-		ts_tree_scan_rear = KDTree(scan_rear[:, 0].reshape(-1, 1))
-
-	# LIDAR data is leading in determining sample count
-	sample_count = scan_front.shape[0]
-
+	# Print dimensions
 	print(f"Scan front: {scan_front.shape}")
 	
 	if use_rear_lidar:
@@ -65,6 +52,19 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 
 	print(f"Odo: {odometry.shape}")
 	print(f"Groundtruth: {groundtruth.shape}")
+
+	# Create KDTree for efficient timestamp matching
+	ts_tree_groundtruth = KDTree(groundtruth[:, 0].reshape(-1, 1))
+	ts_tree_odometry = KDTree(odometry[:, 0].reshape(-1, 1))
+	
+	if use_rear_lidar:
+		ts_tree_scan_rear = KDTree(scan_rear[:, 0].reshape(-1, 1))
+
+	# Select groundtruth data
+	groundtruth = groundtruth[:, 1:4]  # Columns 1, 2 and 3: X, Y positions and heading
+
+	# LIDAR data is leading in determining sample count
+	sample_count = scan_front.shape[0]
 
 	# Setup data arrays based on desired output format
 	# Rear scan data will be resampled and merged to front scan data
@@ -125,4 +125,4 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 		'head_angles': np.zeros((2, sample_count))
 	}
 
-	return joints, lidar, ts_tree_groundtruth, positions
+	return joints, lidar, ts_tree_groundtruth, groundtruth
