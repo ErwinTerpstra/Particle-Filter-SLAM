@@ -14,7 +14,7 @@ with open('experiments/template.json') as f:
 		for key_idx, key in enumerate(fields):
 			experiment[key] = permutation[key_idx]
 
-			file_name = f'experiments/experiment{i + 1}.json'
+			file_name = f'experiments/experiment{i + 1:0>2}_settings.json'
 			with open(file_name, 'w') as f:
 				json.dump(experiment, f)
 
