@@ -7,9 +7,13 @@ import matplotlib.animation as animation
 
 from SLAM_helper import *
 from scipy.spatial import KDTree
+from pathlib import Path
+
 import cv2
 import random
 import time
+import sys
+import json
 
 
 # ---------------------------------------------------------------------------------------------------------------------#
@@ -25,11 +29,10 @@ render_particles = False # Whether to render all particle positions on the map a
 render_groundtruth = True # Whether to render a line for ground truth
 samples_per_iteration = 1  # Number of samples to skip each iteration (for testing)
 iterations_per_frame = 50  # Number of iterations between rendering map frames
-event_loop_interval = 10 # Number of SLAM iterations between running the QT event loop. Set to 0 to disable the event loop
 
 # Particle filter configuration
-N, N_threshold = 100, 35  # Number of particles and resampling threshold
-disable_particle_filtering = True # Set to true to disable particle filtering. In this case, localization is purely from odometry data
+N, N_threshold = 10, 3  # Number of particles and resampling threshold
+disable_particle_filtering = False # Set to true to disable particle filtering. In this case, localization is purely from odometry data
 
 # Map and particle noise configuration
 noise_sigma = 1e-3 # Noise standard deviation for particles
@@ -37,14 +40,52 @@ factor = np.array([1, 1, 10])  # Noise factor for heading (yaw) and position (x,
 
 # These offsets are used to evaluate map correlation at various offsets of the particle's actual position
 # Current settings considers a 3x3 grid for each particle
-x_range = np.array([ -0.05, 0.00, 0.05 ])
-y_range = np.array([ -0.05, 0.00, 0.05 ])
+# Set both range and resolution to zero to disable
+local_search_range = 0.05	# The maximum range for local search
+local_search_resolution = 1 # The amount of grid cells to look for in each direction. A value of "1" results in a  
+							# 3x3 grid. A value of "2" in a 5x5 grid, "3" results in a 7x7 grid, etc.
 
 # Override settings if particle filtering should be disabled
 if disable_particle_filtering:
 	N = 1
 	noise_sigma = 0
-	x_range = y_range= np.zeros(1)
+	local_search_range = 0
+	local_search_resolution = 0
+
+# ---------------------------------------------------------------------------------------------------------------------#
+## Experiment loading
+# ---------------------------------------------------------------------------------------------------------------------#
+
+if len(sys.argv) > 1:
+	experiment_file = Path(sys.argv[1])
+	experiment_output = str(experiment_file.parent.joinpath(experiment_file.stem))
+
+	with open(experiment_file) as f:
+		experiment = json.load(f)
+
+	# Load settings from data file
+	dataset = experiment.get('dataset', dataset)
+	
+	N = experiment.get('particle_count', N)
+	N_threshold = N // 3
+
+	noise_sigma = experiment.get('noise_sigma', noise_sigma)
+	local_search_range = experiment.get('local_search_range', local_search_range)
+	local_search_resolution = experiment.get('local_search_resolution', local_search_resolution)
+
+	# Disable animation for experiments
+	render_animated = False
+
+	# Print settings
+	print(f'Loaded settings for experiment {experiment_file}:')
+	print(f'Writing experiment output to {experiment_output}*')
+	print(f'Particle count: {N}')
+	print(f'Noise sigma: {noise_sigma}')
+	print(f'Local search range: {local_search_range}')
+	print(f'Local search resolution: {local_search_resolution}')
+	print('')
+else:
+	experiment_output = None
 
 # ---------------------------------------------------------------------------------------------------------------------#
 ## Script
@@ -54,6 +95,7 @@ np.random.seed(0)
 
 mapfig = {}
 
+error_values = [ ]
 rmse_values = []
 
 print(f'Loading dataset "{dataset}"...')
@@ -81,10 +123,10 @@ elif dataset == 'bicocca':
 	sample_limit = 104640
 	
 	mapfig['res'] = 0.2
-	mapfig['xmin'] = -80
-	mapfig['ymin'] = -80
-	mapfig['xmax'] = 80
-	mapfig['ymax'] = 80
+	mapfig['xmin'] = -45
+	mapfig['ymin'] = -60
+	mapfig['xmax'] = 45
+	mapfig['ymax'] = 30
 	
 	# Angle for each sample in LIDAR sweep
 	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
@@ -102,6 +144,10 @@ particles = np.zeros((N, 3))
 
 # Weight per particle, initialized to evenly distributed
 weight = np.ones((N, 1)) * (1.0 / N)
+
+# Calculate positions for the local search grid
+x_range = np.linspace(-local_search_range, local_search_range, 2 * local_search_resolution + 1)
+y_range = np.linspace(-local_search_range, local_search_range, 2 * local_search_resolution + 1)
 
 # Map drawing parameters
 mapfig['sizex'] = int(np.ceil((mapfig['xmax'] - mapfig['xmin']) / mapfig['res'] + 1)) # sizex = x-size of the map
@@ -148,7 +194,7 @@ ground_truth_heading = groundtruth[index, 2]
 ground_truth_rotation = -np.array([[np.cos(ground_truth_heading), -np.sin(ground_truth_heading)], [np.sin(ground_truth_heading), np.cos(ground_truth_heading)]])
 
 # Time keeping
-start_time = time.perf_counter_ns()
+start_time = time.time()
 last_print = 0
 correlation_time = 0
 resample_time = 0
@@ -168,9 +214,6 @@ def animate(frame):
 	while iterations_this_frame < iterations_per_frame and sample < timeline:
 		slam_iteration()
 
-		if event_loop_interval > 0 and iterations_this_frame % event_loop_interval == 0:
-			plt.pause(0.001) # pause interval (This makes rendering a bit slower, but keeps the GUI responsive)
-
 		iterations_this_frame += 1
 
 	# Update the image drawer
@@ -179,9 +222,9 @@ def animate(frame):
 	if render_particles:
 		drawParticles(mapfig, scatter, particles)
 
-	im.set_data(mapfig['show_map'])
+	update_plots()
 
-	return im
+	return [ im, rmse_plot ]
 
 # Perform a single SLAM iteration. Moves the sample counter forward by a number of samples
 def slam_iteration():
@@ -196,8 +239,7 @@ def slam_iteration():
 	global correlation_time, resample_time
 	global map_draw_time, map_convert_time
 	global update_particles_time, update_weights_time
-	global rmse_values
-	global current_avg_rmse
+	global error_values, rmse_values
 	global timestamp_tree
 	
 	# Get current lidar data and pose measurement
@@ -207,6 +249,15 @@ def slam_iteration():
 	yaw_c = rpy_c[0, 2]
 
 	yaw_est = particles[:, 2]
+
+	estimated_timestamp = lid_c['t'][0][0]
+
+    # Find the closest ground truth position using KDTree
+	distance, index = timestamp_tree.query(estimated_timestamp)
+	true_position = groundtruth[index, 0:2] - ground_truth_offset  # Ground truth x, y coordinates
+	true_heading = groundtruth[index, 2] - ground_truth_heading # Ground truth heading
+
+	true_position = np.matmul(ground_truth_rotation, true_position)
 
 	# This does some sort of reference frame conversion between previous pose and the particles
 	update_particles_start = time.perf_counter_ns() # Start timer
@@ -281,21 +332,14 @@ def slam_iteration():
 	y_r = (np.ceil((particles[ind_best, 1] - mapfig['ymin']) / mapfig['res']).astype(np.int16) - 1)
 
 	# Extract SLAM estimate (timestamp, x, y)
-	estimated_timestamp = lid_c['t'][0][0]
-
 	est_x, est_y = particles[ind_best, 0], particles[ind_best, 1]
-
-    # Find the closest ground truth position using KDTree
-	distance, index = timestamp_tree.query(estimated_timestamp)
-	true_position = groundtruth[index, 0:2] - ground_truth_offset  # Ground truth x, y coordinates
-
-	true_position = np.matmul(ground_truth_rotation, true_position)
 	
     # Calculate RMSE for the current sample
 	error = (true_position[0] - est_x) ** 2 + (true_position[1] - est_y) ** 2
-	rmse_values.append(error)
-	if rmse_values:
-		current_avg_rmse = np.sqrt(np.mean(rmse_values))
+	error_values.append(error)
+
+	rmse = np.sqrt(np.mean(error_values))
+	rmse_values.append(rmse)
 
 	# Mark location with a red pixel (index 0 in RGB)
 	mapfig['show_map'][x_r, y_r,:] = [ 255, 0, 0]
@@ -354,14 +398,14 @@ def slam_iteration():
 	sample += samples_per_iteration
 
 	# Print timing stats
-	if time.time() - last_print >= 0.5:
-		elapsed_time = time.perf_counter_ns() - start_time
+	if time.time() - last_print >= 1.0:
+		elapsed_time = time.time() - start_time
 		elapsed_iterations = (sample - start_sample) / float(samples_per_iteration)
 		nfactor = 1 / (1000000 * float(elapsed_iterations))
 
 		print("{0}/{1}".format(sample, timeline))
-		print(f"Current average RMSE: {current_avg_rmse:.4f} meters")
-		print("Total time: {:.1f}s; Avg. per frame: {:.1f}ms".format(elapsed_time / 1000000000.0, elapsed_time * nfactor))
+		print(f"Current average RMSE: {rmse:.4f} meters")
+		print("Total time: {:.1f}s; Avg. per frame: {:.1f}ms".format(elapsed_time, elapsed_time * 1000 / float(elapsed_iterations)))
 		print("Correlation: {:.1f}ms; Resample: {:.1f}ms".format(correlation_time * nfactor, resample_time * nfactor))
 		print("Map draw: {:.1f}ms; Map convert: {:.1f}ms;".format(map_draw_time * nfactor, map_convert_time * nfactor))
 		print("Update particles: {:.1f}ms; Update weights: {:.1f}ms".format(update_particles_time * nfactor, update_weights_time * nfactor))
@@ -370,29 +414,72 @@ def slam_iteration():
 
 		last_print = time.time()
 
-# Setup output
-fig = plt.figure(1)
-ax = fig.add_subplot(1, 1, 1)
-ax.set_title("SLAM Map")
+def update_plots():
+	sample_count = len(rmse_values)
 
+	im.set_data(mapfig['show_map'])
+	rmse_plot.set_data(list(range(sample_count)), rmse_values)
+	
+	ax2.set_xlim(xmax=sample_count)
+	ax2.set_ylim(ymax=max(rmse_values) * 1.1)
+
+# Setup output
+fig = plt.figure(1, figsize=(10, 5))
+
+ax1 = fig.add_subplot(1, 2, 1)
+ax1.set_title("SLAM Map")
+
+ax2 = fig.add_subplot(1, 2, 2)
+ax2.set_title("RMSE")
+ax2.set_xlabel("Sample")
+ax2.set_ylabel("RMSE (m)")
+ax2.set_xlim(xmin=0)
+ax2.set_ylim(ymin=0)
+
+# Prepare plots
+im = ax1.imshow(mapfig['show_map'])
+rmse_plot, = ax2.plot([], [])
+
+if render_particles:
+	scatter = ax1.scatter([], [], s=0.1)
+
+# Either have an animation call the update function or manually run all iterations
 if render_animated:
 	# Setup the animation
 	frame_count = int(np.ceil((timeline - 1) / samples_per_iteration / iterations_per_frame))
-	anim = animation.FuncAnimation(fig=fig, func=animate, frames=frame_count, interval=0)
+	anim = animation.FuncAnimation(fig=fig, func=animate, frames=frame_count, interval=0, repeat=False, blit=False, cache_frame_data=False)
 else:
 	# Run all iterations
 	while sample <  timeline:
 		slam_iteration()
 
 	updateDisplayMap(mapfig)
+	update_plots()
 
-im = ax.imshow(mapfig['show_map'])
+# Write output of experiment
+if experiment_output is not None:
+	# Tally final time
+	total_time = time.time() - start_time
 
-if render_particles:
-	scatter = ax.scatter([], [], s=0.1)
+	# Save image
+	plt.savefig(experiment_output + '_map.png')
 
-plt.show()
+	# Save stats
+	output = ''
+	output += f'dataset = {dataset}\n'
+	output += f'particle_count = {N}\n'
+	output += f'noise_sigma = {noise_sigma}\n'
+	output += f'local_search_range = {local_search_range}\n'
+	output += f'local_search_resolution = {local_search_resolution}\n'
+	output += '\n'
 
-if rmse_values:
-    final_rmse = np.sqrt(np.mean(rmse_values))
-    print(f"Final RMSE between estimated position and ground truth: {final_rmse:.4f} meters")
+	output += f'runtime = {total_time:.3f}s\n'
+	output += f'rmse = {rmse_values[-1]:.3f}m\n'
+
+	with open(experiment_output + '_stats.txt', 'w') as f:
+		f.write(output)
+
+	print('Experiment finished!')
+else:
+	# Show the window
+	plt.show()

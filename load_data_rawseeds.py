@@ -23,7 +23,7 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 
 	# Limit number of rows for quicker testing
 	max_rows = None
-
+	skip_rows = 80000
 
 	datafile_prefix = f'{dataset_folder}\\{dataset_name}\\{dataset_name}'
 	sick_front_file = f'{datafile_prefix}-SICK_FRONT.csv'
@@ -32,7 +32,7 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 	groundtruth_file = f'{datafile_prefix}-GROUNDTRUTH.csv'
 
 	print(f'Loading {sick_front_file}...')
-	scan_front = np.genfromtxt(sick_front_file, delimiter=',', max_rows=max_rows)
+	scan_front = np.genfromtxt(sick_front_file, delimiter=',', max_rows=max_rows, skip_header=skip_rows)
 	
 	print(f'Loading {odometry_file}...')
 	odometry = np.genfromtxt(odometry_file, delimiter=',', max_rows=max_rows)
@@ -42,7 +42,7 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 	
 	if use_rear_lidar:
 		print(f'Loading {sick_rear_file}...')
-		scan_rear = np.genfromtxt(sick_rear_file, delimiter=',', max_rows=max_rows)
+		scan_rear = np.genfromtxt(sick_rear_file, delimiter=',', max_rows=max_rows, skip_header=skip_rows)
 
 	# Print dimensions
 	print(f"Scan front: {scan_front.shape}")
@@ -53,6 +53,9 @@ def load(dataset_folder, dataset_name, use_rear_lidar):
 	print(f"Odo: {odometry.shape}")
 	print(f"Groundtruth: {groundtruth.shape}")
 
+	# A bit hacky, but we replace skipped rows in scan data with zeros to make sure the sample count is correct
+	scan_front = np.concatenate([ np.zeros((skip_rows, scan_front.shape[1])), scan_front ])
+	
 	# Create KDTree for efficient timestamp matching
 	ts_tree_groundtruth = KDTree(groundtruth[:, 0].reshape(-1, 1))
 	ts_tree_odometry = KDTree(odometry[:, 0].reshape(-1, 1))
