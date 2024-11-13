@@ -1,0 +1,7 @@
+{
+	"dataset": "bicocca",
+	"particle_count": 100,
+	"noise_sigma": 1e-3,
+	"local_search_range": 0,
+	"local_search_resolution": 0
+}

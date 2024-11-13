@@ -146,8 +146,9 @@ particles = np.zeros((N, 3))
 weight = np.ones((N, 1)) * (1.0 / N)
 
 # Calculate positions for the local search grid
-x_range = np.linspace(-local_search_range, local_search_range, 2 * local_search_resolution + 1)
-y_range = np.linspace(-local_search_range, local_search_range, 2 * local_search_resolution + 1)
+local_search_grid_size = 2 * local_search_resolution + 1
+x_range = np.linspace(-local_search_range, local_search_range, local_search_grid_size)
+y_range = np.linspace(-local_search_range, local_search_range, local_search_grid_size)
 
 # Map drawing parameters
 mapfig['sizex'] = int(np.ceil((mapfig['xmax'] - mapfig['xmin']) / mapfig['res'] + 1)) # sizex = x-size of the map
@@ -309,11 +310,11 @@ def slam_iteration():
 		ind = np.argmax(corr_cur)
 
 		# Store the correlation for that offset
-		corr[i] = corr_cur[ind // 3, ind % 3]
+		corr[i] = corr_cur[ind // local_search_grid_size, ind % local_search_grid_size]
 
 		# Update particle position according to chosen offset
-		particles[i, 0] += x_range[ind // 3]
-		particles[i, 1] += y_range[ind % 3]
+		particles[i, 0] += x_range[ind // local_search_grid_size]
+		particles[i, 1] += y_range[ind % local_search_grid_size]
 
 	# Keep track of how much time we spend on particle correlation
 	correlation_time += time.perf_counter_ns() - corr_start

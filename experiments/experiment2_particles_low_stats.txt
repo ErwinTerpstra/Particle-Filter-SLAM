@@ -1,0 +1,8 @@
+dataset = bicocca
+particle_count = 10
+noise_sigma = 0.001
+local_search_range = 0.05
+local_search_resolution = 1
+
+runtime = 19.867s
+rmse = 1.099m
