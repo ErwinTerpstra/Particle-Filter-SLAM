@@ -1,45 +1,27 @@
 # Particle Filter SLAM
-In this project, the structure of mapping and localization in an indoor environment is implemented using information from an IMU and range sensors. The IMU orientation and odometry information from a walking humanoid is integrated with a 2D laser range scanner (LIDAR) in order to build a 2D occupancy grid map of the walls and obstacles in the environment. SLAM was implemented using Particle Filters. After this, additional camera and depth imagery from a Kinect One sensor is integrated to build a textured map. Training sets of odometry, inertial, and range measurements are provided from a THOR‐OP humanoid robot.
 
-* Tested on: Kubuntu 16.04.3, Intel i5-4200U (4) @ 2.600GHz 4GB
-* Python 2.7, OpenCV 3.2
+This projects adapts an existing SLAM implementation (<https://github.com/yashv28/Particle-Filter-SLAM>) to work with a different dataset, fixes a couple issues in the original code and provides insights into the performance of the algorithm.
 
-### THOR
-<img src="./docs/robot.png" alt="drawing" width="400"/>
+* Experiments ran on: Windows 10, Intel(R) Core(TM) i7-11370H @ 3.30GHz
+* Python 3.12.3
 
-### Texture Map Data (Optional)
-* After cloning the repo, download from link -> [Drive](https://goo.gl/9xFu6J)
-* Save to `Proj4_2018_Train_rgb`
+## Configuration
 
-Challenge Description
----------------------
-* Preprocess LIDAR data
-* Convert the Lidar scan data into proper cell position in the global world frame to create map
-* Localization prediction step
-* Localization update step
-* Mapping the environment
-* Texture Mapping
+All configurable hyperparameters are provided at the top of `SLAM.py`. Comments in the file provide clarification on what each parameter's function is.
 
-# Implementation Hacks
-There are 2 main performance improvement tricks that I used to improve the outcome of the SLAM:
+## Dataset
 
-* Adding noise to the pose information appropriately: larger noise causes large gaps in the path, whereas smaller noise causes frequent change in direction. 
+Besides the dataset the original authors supplied, the code has been modified to support the [Rawseeds](http://www.rawseeds.org/home/). The `data` folder contains an archive for the `Bicocca_2009-02-25b` recording session. In order to use this dataset, the archive must be extracted in the data folder (so that the CSV files end up in the `data/Bicocca_2009-02-25b` folder).
 
-![](./Results/ln_sn.png)
+# Usage
 
-* Adding random positions to each particle during the calculation of correlation value, and select maximum value of particle as new updated position: accurate mapping.
-![](./Results/rand_pos.png)
+Run `python SLAM.py` to run the application. Depending on the configuration parameters, you will either see a live output or the simulation will be fully ran first before showing the final map.
 
-# Results
+## Experiments
 
-### Test results
-<img src="Results/train0.png" width="220"> <img src="Results/train1.png" width="220">
-<img src="Results/train2.png" width="220"> <img src="Results/train3.png" width="220">
+The code is setup to provide reproducable experiments with predefined hyperparameters.
 
-### Test results
-<img src="./Results/test.png" alt="drawing" width="250"/>
+- Run `python SLAM.py experiments/experiment0_default.json` (or a different experiment file) to run that specific experiment.
+- Run `run_all.bat` to sequentially run all experiments
 
-# References
-* [Robust Monte Carlo Localization for Mobile Robots](http://robots.stanford.edu/papers/thrun.robust-mcl.pdf)
-* [Learning Occupancy Grid Maps with Forward Sensor Models](http://robots.stanford.edu/papers/thrun.iros01-occmap.pdf)
-* [Head Tracking for the Oculus Rift](https://ieeexplore.ieee.org/abstract/document/6906608)
+Running an experiment will output an associated `{experiment}_map.png` file with the map and RMSE graph, and an `{experiment}_stats.txt` file with the hyperparameters and final runtime and RSME values.
