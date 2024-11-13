@@ -176,9 +176,11 @@ def updateDisplayMap(m):
 	occupied = m['log_map'] > 0
 	empty = m['log_map'] < 0
 	route = (m['show_map'][:, :, 0] == 255)
+	groundtruth = (m['show_map'][:, :, 2] == 255)
+	path = np.logical_or(route, groundtruth)
 
-	m['show_map'][np.logical_and(occupied, ~route), :] = 0
-	m['show_map'][np.logical_and(empty, ~route), :] = 254 # Set empty space to 254 so 255 keeps being reserved for the route
+	m['show_map'][np.logical_and(occupied, ~path), :] = 0
+	m['show_map'][np.logical_and(empty, ~path), :] = 254 # Set empty space to 254 so 255 keeps being reserved for the route
 
 def drawParticles(m, scatter, particles):
 	# Convert particle positions to map coordinates
