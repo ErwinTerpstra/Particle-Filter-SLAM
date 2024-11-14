@@ -41,7 +41,7 @@ factor = np.array([1, 1, 10])  # Noise factor for heading (yaw) and position (x,
 # These offsets are used to evaluate map correlation at various offsets of the particle's actual position
 # Current settings considers a 3x3 grid for each particle
 # Set both offset and resolution to zero to disable
-local_search_offset = 0.05	# The step size for local search. Should in practice usually match the map resolution
+local_search_offset = 0.1	# The step size for local search. Should in practice usually match the map resolution
 local_search_resolution = 1 # The amount of grid cells to look for in each direction. A value of "1" results in a  
 							# 3x3 grid. A value of "2" in a 5x5 grid, "3" results in a 7x7 grid, etc.
 
@@ -132,7 +132,7 @@ elif dataset == 'bicocca':
 	start_sample = 99580 # Gives about ~4700 samples of ground truth data
 	sample_limit = 104640
 	
-	mapfig['res'] = 0.05
+	mapfig['res'] = 0.1
 	mapfig['xmin'] = -50
 	mapfig['ymin'] = -60
 	mapfig['xmax'] = 50
@@ -141,9 +141,10 @@ elif dataset == 'bicocca':
 	# Angle for each sample in LIDAR sweep
 	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
 	# SICK rear sensor has 181 samples in the full rear 180 degree range
-	# This means there's probably 2 samples overlapping at +/-90 degrees, which makes the lineair space division slightly incorrect
 	if use_rear_lidar:
-		angles = np.linspace(-90, 270, 362) * np.pi / 180.0
+		angles_front = np.linspace(-90, 90, 181) * np.pi / 180.0
+		angles_rear = np.linspace(90, 270, 181) * np.pi / 180.0
+		angles = np.concatenate([angles_front, angles_rear])
 	else:
 		angles = np.linspace(-90, 90, 181) * np.pi / 180.0
 

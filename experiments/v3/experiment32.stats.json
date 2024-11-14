@@ -1,0 +1,10 @@
+{
+ "dataset": "bicocca",
+ "particle_count": 100,
+ "noise_sigma": 0.001,
+ "local_search_offset": 0.05,
+ "local_search_resolution": 1,
+ "use_rear_lidar": true,
+ "runtime": 150.28301763534546,
+ "rmse": 1.74334151500512
+}
