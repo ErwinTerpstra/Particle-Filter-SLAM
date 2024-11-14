@@ -116,41 +116,38 @@ def mapConvert(scan, ori_robot, head_a, angles, particles, N, pos_phy, posX_map,
 
 	return pos_phy, posX_map, posY_map
 
+
 # INPUT 
 # im              the map 
-# x_im,y_im       physical x,y positions of the grid map cells
 # vp(0:2,:)       occupied x,y positions from range sensor (in physical unit)  
 # xs,ys           physical x,y,positions you want to evaluate "correlation" 
 #
 # OUTPUT 
 # c               sum of the cell values of all the positions hit by range sensor
-def mapCorrelation(im, x_im, y_im, vp, xs, ys):
-    nx = im.shape[0]
-    ny = im.shape[1]
-    xmin = x_im[0]
-    xmax = x_im[-1]
-    xresolution = (xmax-xmin)/(nx-1)
-    ymin = y_im[0]
-    ymax = y_im[-1]
-    yresolution = (ymax-ymin)/(ny-1)
-    nxs = xs.size
-    nys = ys.size
-    cpr = np.zeros((nxs, nys))
-    for jy in range(0,nys):
-        y1 = vp[1,:] + ys[jy] # 1 x 1076
-        iy = np.int16(np.round((y1-ymin)/yresolution))
-        for jx in range(0,nxs):
-            x1 = vp[0,:] + xs[jx] # 1 x 1076
-            ix = np.int16(np.round((x1-xmin)/xresolution))
+def mapCorrelation(m, vp, xs, ys):
+	im = m['map']
+
+	nx = im.shape[0]
+	ny = im.shape[1]
+
+	nxs = xs.size
+	nys = ys.size
+	cpr = np.zeros((nxs, nys))
+	for jy in range(0,nys):
+		y1 = vp[1,:] + ys[jy] # 1 x 1076
+		iy = (np.ceil((y1 - m['ymin']) / m['res']).astype(np.int16) - 1)
+		for jx in range(0,nxs):
+			x1 = vp[0,:] + xs[jx] # 1 x 1076
+			ix = (np.ceil((x1 - m['xmin']) / m['res']).astype(np.int16) - 1)
 
 			# Create a mask that indicates which positions are valid (within the mask range)
-            valid = np.logical_and(np.logical_and((iy >=0), (iy < ny)), \
-                                   np.logical_and((ix >=0), (ix < nx)))
+			valid = np.logical_and(np.logical_and((iy >=0), (iy < ny)), \
+									np.logical_and((ix >=0), (ix < nx)))
 			
 			# Count how many positions are actually occupied that the sensor expects to be occupied
-            cpr[jx,jy] = np.sum(im[ix[valid],iy[valid]])
+			cpr[jx,jy] = np.sum(im[ix[valid],iy[valid]])
 
-    return cpr
+	return cpr
 
 def drawMap(particle_cur, xis, yis, m):
 	x_sensor = (np.ceil((particle_cur[0] - m['xmin']) / m['res']).astype(np.int16) - 1)

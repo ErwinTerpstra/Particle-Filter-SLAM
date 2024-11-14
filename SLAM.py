@@ -58,7 +58,16 @@ if disable_particle_filtering:
 
 if len(sys.argv) > 1:
 	experiment_file = Path(sys.argv[1])
-	experiment_output = str(experiment_file.parent.joinpath(experiment_file.stem))
+	print(f'Loading settings for experiment {experiment_file}...')
+
+	# Stem twice to remove extension and input signifier
+	experiment_input = Path(experiment_file.stem)
+	experiment_output = str(experiment_file.parent.joinpath(experiment_input.stem)) 
+	stats_file = Path(experiment_output + ".stats.json")
+
+	if stats_file.is_file():
+		print('Skipping experiment because output already exists')
+		sys.exit()
 
 	with open(experiment_file) as f:
 		experiment = json.load(f)
@@ -67,11 +76,10 @@ if len(sys.argv) > 1:
 	dataset = experiment.get('dataset', dataset)
 	
 	N = experiment.get('particle_count', N)
-	N_threshold = N // 3
+	N_threshold = N # Resample every iteration
 
 	noise_sigma = experiment.get('noise_sigma', noise_sigma)
 	local_search_offset = experiment.get('local_search_offset', local_search_offset)
-	local_search_resolution = experiment.get('local_search_resolution', local_search_resolution)
 	local_search_resolution = experiment.get('local_search_resolution', local_search_resolution)
 	use_rear_lidar = experiment.get('use_rear_lidar', use_rear_lidar)
 
@@ -79,7 +87,6 @@ if len(sys.argv) > 1:
 	render_animated = False
 
 	# Print settings
-	print(f'Loaded settings for experiment {experiment_file}:')
 	print(f'Writing experiment output to {experiment_output}*')
 	print(f'Particle count: {N}')
 	print(f'Noise sigma: {noise_sigma}')
@@ -126,10 +133,10 @@ elif dataset == 'bicocca':
 	sample_limit = 104640
 	
 	mapfig['res'] = 0.05
-	mapfig['xmin'] = -45
+	mapfig['xmin'] = -50
 	mapfig['ymin'] = -60
-	mapfig['xmax'] = 45
-	mapfig['ymax'] = 30
+	mapfig['xmax'] = 50
+	mapfig['ymax'] = 40
 	
 	# Angle for each sample in LIDAR sweep
 	# SICK frontal sensor has 181 samples in the full frontal 180 degree range
@@ -149,7 +156,7 @@ particles = np.zeros((N, 3))
 weight = np.ones((N, 1)) * (1.0 / N)
 
 # Calculate positions for the local search grid
-local_search_range = local_search_resolution * local_search_resolution
+local_search_range = local_search_resolution * local_search_offset
 local_search_grid_size = 2 * local_search_resolution + 1
 x_range = np.linspace(-local_search_range, local_search_range, local_search_grid_size)
 y_range = np.linspace(-local_search_range, local_search_range, local_search_grid_size)
@@ -168,10 +175,6 @@ mapfig['show_map'] = np.zeros((mapfig['sizex'], mapfig['sizey'], 3), dtype = np.
 mapfig['show_map'][:,:,:] = 128 # all colors set to grey
 
 pos_phy, posX_map, posY_map = {}, {}, {}
-
-# Lookup table to convert map coordinate to physical positions
-x_im = np.arange(mapfig['xmin'], mapfig['xmax'] + mapfig['res'], mapfig['res'])  # x-positions of each pixel of the map
-y_im = np.arange(mapfig['ymin'], mapfig['ymax'] + mapfig['res'], mapfig['res'])  # y-positions of each pixel of the map
 
 # Get joint datasets
 # ts = timestamp?
@@ -302,13 +305,8 @@ def slam_iteration():
 	corr_start = time.perf_counter_ns() #start timer
 	corr = np.zeros((N, 1))
 	for i in range(N):
-		# Add an extra row to the occopied positions list for this particle
-		# This is necessary since the mapCorrelation function expects a 3xN matrix (even though the 3rd row is not used)
-		size = pos_phy[i].shape[1]
-		Y = np.concatenate([pos_phy[i], np.zeros((1, size))], axis = 0)
-
 		# Calculate correlation for each of the combinations in x_range/y_range
-		corr_cur = mapCorrelation(mapfig['map'], x_im, y_im, Y[0 : 3, :], x_range, y_range)
+		corr_cur = mapCorrelation(mapfig, pos_phy[i], x_range, y_range)
 
 		# Determine which of the offsets performed best
 		ind = np.argmax(corr_cur)
@@ -467,7 +465,7 @@ if experiment_output is not None:
 	total_time = time.time() - start_time
 
 	# Save image
-	plt.savefig(experiment_output + '_map.png')
+	plt.savefig(experiment_output + '.map.png')
 
 	# Save stats
 	output = { }
@@ -480,8 +478,27 @@ if experiment_output is not None:
 	output['runtime'] = total_time
 	output['rmse'] = rmse_values[-1]
 
-	with open(experiment_output + '_stats.json', 'w') as f:
+	with open(experiment_output + '.stats.json', 'w') as f:
 		json.dump(output, f, indent=1)
+
+	with open('experiments/results.csv', 'a') as f:
+		fields = \
+		[
+			experiment_output, 
+			dataset, 
+			use_rear_lidar,
+			N,
+			noise_sigma,
+			local_search_resolution,
+			local_search_offset,
+			total_time,
+			rmse_values[-1] 
+		]
+
+		fields = [ str(field) for field in fields ]
+
+		f.write(', '.join(fields))
+		f.write('\n')
 
 	print('Experiment finished!')
 else:

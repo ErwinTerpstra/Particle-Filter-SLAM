@@ -5,7 +5,7 @@ import itertools
 with open('experiments/template.json') as f:
 	config = json.load(f)
 
-	fields = ['local_search_resolution', 'noise_sigma', 'particle_count', 'use_rear_lidar' ]
+	fields = [ 'use_rear_lidar', 'particle_count', 'noise_sigma', 'local_search_resolution'  ]
 	other_fields = [ key for key in config.keys() if key not in fields ]
 
 	for i, permutation in enumerate(itertools.product(*[ config[key] for key in fields])):
@@ -14,7 +14,7 @@ with open('experiments/template.json') as f:
 		for key_idx, key in enumerate(fields):
 			experiment[key] = permutation[key_idx]
 
-			file_name = f'experiments/experiment{i + 1:0>2}_settings.json'
+			file_name = f'experiments/experiment{i + 1:0>2}.settings.json'
 			with open(file_name, 'w') as f:
 				json.dump(experiment, f)
 
