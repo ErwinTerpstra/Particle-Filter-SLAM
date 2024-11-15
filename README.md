@@ -21,7 +21,8 @@ Run `python SLAM.py` to run the application. Depending on the configuration para
 
 The code is setup to provide reproducable experiments with predefined hyperparameters.
 
-- Run `python SLAM.py experiments/experiment0_default.json` (or a different experiment file) to run that specific experiment.
-- Run `run_all.bat` to sequentially run all experiments
+- The `experiments/template.json` file is used to define each hyperparameter value that should be included. Run `python generate_experiments.py` to generate configuration files for each combination of values.
+- Run `python SLAM.py {experiment_file} {experiment_repetition:optional}` to run a specific experiment. E.g. `python SLAM.py experiments/experiment01.json 1` runs that experiment and marks it's result as the first repetition.
+- Run `run_all.bat` to sequentially run all experiments. It is currently setup to run all experiments 10 repetitions
 
 Running an experiment will output an associated `{experiment}_map.png` file with the map and RMSE graph, and an `{experiment}_stats.txt` file with the hyperparameters and final runtime and RSME values.
