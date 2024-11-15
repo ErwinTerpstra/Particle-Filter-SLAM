@@ -16,7 +16,6 @@ plot_function_color <- function(x,color_var){
   
   ggplot(x, aes(runtime, rmse, label = exp_naam, color = .data[[color_var]])) +
     geom_point()+
-    #geom_text(hjust = -0.1, vjust = 0.1)+
     geom_text_repel(
       max.overlaps = 20,           # Increase the max overlaps limit
       size = 3,                    # Adjust label size for readability
@@ -40,14 +39,15 @@ plot_function_boxplot <- function(x, y_value, color_var){
   
   ggplot(x, aes(exp_naam, y_value = .data[[y_value]], fill = .data[[color_var]])) +
     geom_boxplot()+
+    facet_grid(. ~ use_rear_lidar)+
     theme_bw()+
     labs(title = "Results SLAM algorithm experiments",
-         subtitle = paste0("Boxplot of ",y_value, " with and without rear lidar sensor,\nColor based on ", 
+         subtitle = paste0("Boxplot of ",y_value, " of 10 runs, with and without rear lidar sensor,\nColor based on ", 
                            color_var, "-value"),
          x = "Experiment number",
-         y = "RMSE [mtr]") +
+         y = y_value) +
     theme(legend.position = "off",
-          axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))
+          axis.text.x = element_text(angle = 90, vjust = 0, hjust=0))
   
 }
 
@@ -74,10 +74,14 @@ import_file_results_mean <- import_list(paste0(map, bestand,sep=""),
 
 df_results_mean <- import_file_results_mean[-1,]
 
+df_results_mean$exp_num <- as.numeric(str_extract(df_results_mean$experiment_file, "[:digit:]+"))
+df_results_mean$exp_num <- ifelse(df_results_mean$exp_num>18, df_results_mean$exp_num-18, df_results_mean$exp_num)
+df_results_mean$exp_num <- ifelse(df_results_mean$exp_num<10,paste("0",df_results_mean$exp_num, sep=""), df_results_mean$exp_num)
 
 df_results_mean$exp_naam <- paste(str_sub(df_results_mean$experiment_file, 1,3), 
-                             str_extract(df_results_mean$experiment_file, "[:digit:]+"),sep="_")
+                                  df_results_mean$exp_num,sep="_")
 
+df_results_mean <- df_results_mean %>% select(!exp_num)
 
 df_results_mean$rmse <- as.numeric(sub(",", ".", df_results_mean$rmse, fixed = TRUE))
 df_results_mean$runtime <- as.numeric(sub(",", ".", df_results_mean$runtime, fixed = TRUE))
@@ -87,6 +91,8 @@ df_results_mean[,4] <- as.character(df_results_mean[,4])
 df_results_mean[,5] <- as.character(df_results_mean[,5])
 df_results_mean[,6] <- as.character(df_results_mean[,6])
 df_results_mean[,7] <- as.character(df_results_mean[,7])
+
+df_results_mean$use_rear_lidar <- ifelse(df_results_mean$use_rear_lidar==0, "Rear sensor Off", "Rear sensor On")
 
 ## Create txt for upload Latex #################################################
 
@@ -129,8 +135,14 @@ write.csv(df_latex, paste0(map, "\\resultaten_mean_tabel.txt",sep=""), row.names
 df_results <- import_file_results[,-2] %>% 
   filter(!experiment_file=="experiments\\experiment00")
 
+df_results$exp_num <- as.numeric(str_extract(df_results$experiment_file, "[:digit:]+"))
+df_results$exp_num <- ifelse(df_results$exp_num>18, df_results$exp_num-18, df_results$exp_num)
+df_results$exp_num <- ifelse(df_results$exp_num<10,paste("0",df_results$exp_num, sep=""), df_results$exp_num)
+
 df_results$exp_naam <- paste(str_sub(df_results$experiment_file, 1,3), 
-                             str_extract(df_results$experiment_file, "[:digit:]+"),sep="_")
+                                  df_results$exp_num,sep="_")
+
+df_results <- df_results %>% select(!exp_num)
 
 
 df_results$rmse <- as.numeric(sub(",", ".", df_results$rmse, fixed = TRUE))
@@ -142,11 +154,13 @@ df_results[,5] <- as.character(df_results[,5])
 df_results[,6] <- as.character(df_results[,6])
 df_results[,7] <- as.character(df_results[,7])
 
+df_results$use_rear_lidar <- ifelse(df_results$use_rear_lidar=="FALSE", "Rear sensor Off", "Rear sensor On")
+
 ## Plotten van data ############################################################
 # Plotten van scatterplots
-ns_plot <- plot_function_color(df_results[-1,], "noise_sigma")
-pc_plot <- plot_function_color(df_results[-1,], "particle_count")
-lr_plot <- plot_function_color(df_results[-1,], "local_search_resolution")
+ns_plot <- plot_function_color(df_results_mean, "noise_sigma")
+pc_plot <- plot_function_color(df_results_mean, "particle_count")
+lr_plot <- plot_function_color(df_results_mean, "local_search_resolution")
 
 master_title <- textGrob("Visualization of experiment results", gp = gpar(fontsize = 20))
 
