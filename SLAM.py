@@ -58,11 +58,15 @@ if disable_particle_filtering:
 
 if len(sys.argv) > 1:
 	experiment_file = Path(sys.argv[1])
+	experiment_repetition = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+
 	print(f'Loading settings for experiment {experiment_file}...')
 
 	# Stem twice to remove extension and input signifier
 	experiment_input = Path(experiment_file.stem)
 	experiment_output = str(experiment_file.parent.joinpath(experiment_input.stem)) 
+	experiment_output += f'.{experiment_repetition}'
+
 	stats_file = Path(experiment_output + ".stats.json")
 
 	if stats_file.is_file():
@@ -87,7 +91,7 @@ if len(sys.argv) > 1:
 	render_animated = False
 
 	# Print settings
-	print(f'Writing experiment output to {experiment_output}*')
+	print(f'Writing experiment output to {experiment_output}.*')
 	print(f'Particle count: {N}')
 	print(f'Noise sigma: {noise_sigma}')
 	print(f'Local search offset: {local_search_offset}')
@@ -96,12 +100,13 @@ if len(sys.argv) > 1:
 	print('')
 else:
 	experiment_output = None
+	experiment_repetition = 0
 
 # ---------------------------------------------------------------------------------------------------------------------#
 ## Script
 # ---------------------------------------------------------------------------------------------------------------------#
-random.seed(0)
-np.random.seed(0)
+random.seed(experiment_repetition)
+np.random.seed(experiment_repetition)
 
 mapfig = {}
 
@@ -485,7 +490,8 @@ if experiment_output is not None:
 	with open('experiments/results.csv', 'a') as f:
 		fields = \
 		[
-			experiment_output, 
+			experiment_output,
+			experiment_repetition,
 			dataset, 
 			use_rear_lidar,
 			N,
